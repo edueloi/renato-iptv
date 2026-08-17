@@ -1,0 +1,89 @@
+{
+  "clients": [],
+  "expenses": [],
+  "botConfig": {
+    "enabled": true,
+    "intervalMinutes": 5,
+    "targetInactive": true,
+    "targetOverdue": true,
+    "targetUpcoming": true,
+    "daysBeforeDueNotice": 2,
+    "templateInactive": "Olá {nome}! Notamos que sua assinatura IPTV/P2P ({app}) está inativa. Temos uma promoção especial para você retornar hoje por apenas R$ {valor}! Responda essa mensagem para reativar seu acesso instantaneamente.",
+    "templateOverdue": "Aviso de Vencimento: Olá {nome}, sua mensalidade IPTV/P2P venceu em {vencimento}. Valor: R$ {valor}. Chave PIX: pix@suaempresa.com. Encaminhe o comprovante para liberação imediata!",
+    "templateUpcoming": "Olá {nome}, lembrete amigo: sua assinatura IPTV/P2P ({app}) vence em {vencimento}. Garanta a renovação antecipada para continuar assistindo sem interrupção! Valor: R$ {valor}.",
+    "lastRunTimestamp": "2026-08-10T13:26:12.912Z",
+    "nextRunTimestamp": "2026-08-10T13:31:12.912Z"
+  },
+  "botLogs": [],
+  "emailSettings": {
+    "smtpHost": "smtp.gmail.com",
+    "smtpPort": 587,
+    "secure": false,
+    "smtpUser": "",
+    "smtpPass": "",
+    "senderName": "IPTV & P2P Pro",
+    "senderEmail": "",
+    "backupRecipientEmail": "admin@teste.com",
+    "backupCcEmail": "cc@teste.com",
+    "autoBackupSchedule": "DAILY",
+    "backupTime": "08:00",
+    "backupFormat": "BOTH",
+    "nextBackupScheduledAt": "2026-08-11T08:00:00.000Z"
+  },
+  "emailLogs": [],
+  "messageTemplates": [
+    {
+      "id": "tpl-cobranca",
+      "title": "🚨 Cobrança - Assinatura Vencida",
+      "category": "VENCIDO",
+      "content": "Olá {nome}! Identificamos que sua mensalidade do {app} venceu em {vencimento}.\n\nValor: R$ {valor}\nChave PIX: pix@suaempresa.com\n\nPor favor, envie o comprovante para renovar seu acesso!",
+      "isSystemDefault": true,
+      "createdAt": "2026-08-08T07:00:00.000Z"
+    },
+    {
+      "id": "tpl-lembrete",
+      "title": "⏰ Lembrete - Vencimento Próximo",
+      "category": "A_VENCER",
+      "content": "Aviso Amigo! Olá {nome}, sua assinatura {app} vence em {vencimento}.\n\nPara renovar sem interrupção:\nValor: R$ {valor}\nChave PIX: pix@suaempresa.com",
+      "isSystemDefault": true,
+      "createdAt": "2026-08-08T07:00:00.000Z"
+    },
+    {
+      "id": "tpl-reativacao",
+      "title": "🎁 Reativação de Cliente Inativo",
+      "category": "INATIVO",
+      "content": "Olá {nome}! Sentimos sua falta. Reative seu teste ou plano {app} hoje mesmo por R$ {valor}.\n\nResponda SIM para liberar o sinal agora!",
+      "isSystemDefault": true,
+      "createdAt": "2026-08-08T07:00:00.000Z"
+    },
+    {
+      "id": "tpl-boasvindas",
+      "title": "👋 Boas-vindas / Novo Acesso",
+      "category": "GERAL",
+      "content": "Seja bem-vindo(a) {nome}!\n\nSeu acesso ao app {app} foi liberado com sucesso.\nVencimento: {vencimento}\nValor: R$ {valor}\n\nQualquer dúvida estamos à disposição!",
+      "isSystemDefault": true,
+      "createdAt": "2026-08-08T07:00:00.000Z"
+    },
+    {
+      "id": "tpl-suporte",
+      "title": "🛠️ Atualização de Aplicativo / Suporte",
+      "category": "SUPORTE",
+      "content": "Olá {nome}! Comunicado importante: lançamos uma atualização para o app {app}.\n\nCaso precise de suporte ou ajuda para atualizar, responda esta mensagem!",
+      "isSystemDefault": true,
+      "createdAt": "2026-08-08T07:00:00.000Z"
+    }
+  ],
+  "appsList": [
+    "XCIPTV",
+    "IBO Player",
+    "IPTV Smarters Pro",
+    "SSIPTV",
+    "TVK Player",
+    "Unitv",
+    "WebPlayer",
+    "SmartOne",
+    "Kodi",
+    "GSE Smart IPTV",
+    "TiviMate"
+  ]
+}

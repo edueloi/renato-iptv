@@ -1,0 +1,6 @@
+{
+  "name": "Sistema de Controle IPTV e P2P",
+  "description": "Sistema completo de controle de vendas IPTV/P2P, gestão de clientes, faturamento no ciclo 19 a 19, despesas, perdas/ganhos, importação de planilhas e central de bot de disparos automatizados.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
