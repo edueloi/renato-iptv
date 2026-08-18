@@ -161,7 +161,7 @@ export function MobileNavigation({
                     {currentUser.role}
                   </span>
                   <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
-                    {currentUser.email}
+                    @{currentUser.username}
                   </span>
                 </div>
               </div>

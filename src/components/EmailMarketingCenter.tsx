@@ -6,6 +6,7 @@ import {
   Calendar, CheckCircle, XCircle, Search, Trash2, Filter, Database, Layers
 } from 'lucide-react';
 import { EmailSettings, EmailLog } from '../types';
+import { apiFetch } from '../utils/api';
 
 interface EmailMarketingCenterProps {
   onRefreshData?: () => void;
@@ -63,7 +64,7 @@ export const EmailMarketingCenter: React.FC<EmailMarketingCenterProps> = () => {
     if (!window.confirm('Tem certeza que deseja limpar todo o histórico de envios por e-mail?')) return;
     setClearingLogs(true);
     try {
-      const res = await fetch('/api/email/logs/clear', { method: 'POST' });
+      const res = await apiFetch('/api/email/logs/clear', { method: 'POST' });
       const json = await res.json();
       if (res.ok) {
         setLogs([]);
@@ -85,7 +86,7 @@ export const EmailMarketingCenter: React.FC<EmailMarketingCenterProps> = () => {
   const fetchEmailSettings = async () => {
     setLoadingSettings(true);
     try {
-      const res = await fetch('/api/email/settings');
+      const res = await apiFetch('/api/email/settings');
       if (res.ok) {
         const json = await res.json();
         if (json.settings) {
@@ -171,7 +172,7 @@ export const EmailMarketingCenter: React.FC<EmailMarketingCenterProps> = () => {
     setSavingSettings(true);
     setStatusMsg(null);
     try {
-      const res = await fetch('/api/email/settings', {
+      const res = await apiFetch('/api/email/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(settings)
@@ -194,7 +195,7 @@ export const EmailMarketingCenter: React.FC<EmailMarketingCenterProps> = () => {
     setStatusMsg(null);
     try {
       const target = testTargetEmail.trim() || settings.backupRecipientEmail || settings.smtpUser;
-      const res = await fetch('/api/email/test', {
+      const res = await apiFetch('/api/email/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -220,7 +221,7 @@ export const EmailMarketingCenter: React.FC<EmailMarketingCenterProps> = () => {
     setSendingBackup(true);
     setStatusMsg(null);
     try {
-      const res = await fetch('/api/email/send-backup', {
+      const res = await apiFetch('/api/email/send-backup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ targetEmail: settings.backupRecipientEmail })
@@ -246,7 +247,7 @@ export const EmailMarketingCenter: React.FC<EmailMarketingCenterProps> = () => {
     setTestingAutoBackup(true);
     setStatusMsg(null);
     try {
-      const res = await fetch('/api/email/trigger-auto-backup', {
+      const res = await apiFetch('/api/email/trigger-auto-backup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -271,7 +272,7 @@ export const EmailMarketingCenter: React.FC<EmailMarketingCenterProps> = () => {
     setSendingMarketing(true);
     setStatusMsg(null);
     try {
-      const res = await fetch('/api/email/send-marketing', {
+      const res = await apiFetch('/api/email/send-marketing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { apiFetch } from '../utils/api';
 import { Database, Server, Code, Copy, Check, Shield, Cpu, Layers, Terminal } from 'lucide-react';
 
 export const ArchitectureDocs: React.FC = () => {
@@ -6,7 +7,7 @@ export const ArchitectureDocs: React.FC = () => {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    fetch('/api/prisma-schema')
+    apiFetch('/api/prisma-schema')
       .then(res => res.text())
       .then(text => setPrismaSchema(text))
       .catch(err => console.error('Error fetching Prisma schema:', err));
@@ -27,7 +28,7 @@ export const ArchitectureDocs: React.FC = () => {
           Arquitetura do Sistema & Módulos Back-end / Prisma MySQL
         </h3>
         <p className="text-slate-600 dark:text-slate-400 text-xs">
-          Documentação técnica da estrutura modular com separação Front-end / Back-end e Schema Prisma pronto para MySQL.
+          Documentação técnica da estrutura modular com separação Front-end / Back-end. Os dados são persistidos em um banco MySQL real via Prisma — nenhuma informação é mockada ou guardada em arquivo local.
         </p>
       </div>
 
@@ -76,7 +77,7 @@ export const ArchitectureDocs: React.FC = () => {
           <div className="flex items-center gap-2">
             <Database className="w-4 h-4 text-emerald-600" />
             <h4 className="font-semibold text-slate-800 dark:text-slate-100 text-xs">
-              Esquema de Banco de Dados Prisma (schema.prisma para MySQL)
+              Esquema de Banco de Dados em Produção (prisma/schema.prisma — MySQL)
             </h4>
           </div>
 
@@ -90,7 +91,7 @@ export const ArchitectureDocs: React.FC = () => {
         </div>
 
         <p className="text-slate-500 text-[11px]">
-          Para migrar os dados para o seu banco MySQL de produção, basta copiar o código abaixo em <code className="text-indigo-600 font-bold">prisma/schema.prisma</code> e rodar <code className="text-emerald-600 font-bold">npx prisma db push</code>.
+          Este é o schema que já está aplicado no banco MySQL atual (via <code className="text-emerald-600 font-bold">npx prisma migrate deploy</code>). Para subir na VPS, veja o passo a passo em <code className="text-indigo-600 font-bold">DEPLOY.md</code> na raiz do projeto.
         </p>
 
         <pre className="p-3 bg-slate-950 text-slate-100 font-mono text-[11px] rounded-lg overflow-x-auto max-h-96 leading-relaxed border border-slate-800">

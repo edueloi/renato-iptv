@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { apiFetch } from '../utils/api';
 import { 
   ArrowUpRight, ArrowDownRight, Search, Filter, Calendar, DollarSign, 
   Layers, Download, RefreshCw, FileText, CheckCircle2, TrendingUp, TrendingDown 
@@ -47,7 +48,7 @@ export function FinancialLedgerGrid() {
   const fetchLedgerData = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/financials/ledger');
+      const res = await apiFetch('/api/financials/ledger');
       if (res.ok) {
         const json = await res.json();
         setLedger(json.ledger || []);

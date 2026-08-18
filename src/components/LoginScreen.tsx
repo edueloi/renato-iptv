@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Tv, Lock, Mail, User, ShieldCheck, ArrowRight, Eye, EyeOff, Sparkles, Check } from 'lucide-react';
+import { Tv, Lock, User, ShieldCheck, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { setSession } from '../utils/api';
 
 export interface UserAuth {
   id: string;
   name: string;
-  email: string;
+  username: string;
   role: 'ADMIN' | 'GERENTE' | 'SUPORTE';
   avatarUrl?: string;
 }
@@ -14,73 +15,43 @@ interface LoginScreenProps {
 }
 
 export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
-  const [email, setEmail] = useState('admin@iptvpro.com');
-  const [password, setPassword] = useState('123456');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    if (!email || !password) {
-      setError('Por favor, preencha o e-mail e a senha.');
+    if (!username || !password) {
+      setError('Por favor, preencha o usuário e a senha.');
       return;
     }
 
     setLoading(true);
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await res.json();
 
-    // Simulate authenticating user
-    setTimeout(() => {
+      if (!res.ok) {
+        setError(data.error || 'Usuário ou senha inválidos.');
+        return;
+      }
+
+      setSession(data.token);
+      localStorage.setItem('iptv_pro_auth', JSON.stringify(data.user));
+      onLoginSuccess(data.user);
+    } catch (err) {
+      setError('Não foi possível conectar ao servidor. Tente novamente.');
+    } finally {
       setLoading(false);
-      let role: 'ADMIN' | 'GERENTE' | 'SUPORTE' = 'ADMIN';
-      let name = 'Eduardo Admin';
-
-      if (email.includes('gerente')) {
-        role = 'GERENTE';
-        name = 'Gerente de Vendas';
-      } else if (email.includes('suporte')) {
-        role = 'SUPORTE';
-        name = 'Suporte Técnico';
-      }
-
-      const authenticatedUser: UserAuth = {
-        id: 'usr_1',
-        name,
-        email,
-        role,
-      };
-
-      if (rememberMe) {
-        localStorage.setItem('iptv_pro_auth', JSON.stringify(authenticatedUser));
-      }
-
-      onLoginSuccess(authenticatedUser);
-    }, 600);
-  };
-
-  const handleQuickDemoLogin = (role: 'ADMIN' | 'GERENTE' | 'SUPORTE') => {
-    let demoEmail = 'admin@iptvpro.com';
-    let demoName = 'Eduardo Admin';
-    if (role === 'GERENTE') {
-      demoEmail = 'gerente@iptvpro.com';
-      demoName = 'Gerente de Vendas';
-    } else if (role === 'SUPORTE') {
-      demoEmail = 'suporte@iptvpro.com';
-      demoName = 'Suporte Operacional';
     }
-
-    const demoUser: UserAuth = {
-      id: `usr_${role.toLowerCase()}`,
-      name: demoName,
-      email: demoEmail,
-      role: role,
-    };
-
-    localStorage.setItem('iptv_pro_auth', JSON.stringify(demoUser));
-    onLoginSuccess(demoUser);
   };
 
   return (
@@ -123,17 +94,18 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
           <form onSubmit={handleSubmit} className="space-y-3.5">
             <div>
               <label className="block text-[11px] font-medium text-slate-300 mb-1">
-                E-mail ou Usuário
+                Usuário
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
-                  <Mail className="w-3.5 h-3.5" />
+                  <User className="w-3.5 h-3.5" />
                 </div>
                 <input
                   type="text"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="ex: admin@iptvpro.com"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="Seu usuário de acesso"
+                  autoComplete="username"
                   className="w-full pl-8 pr-3 py-2 bg-slate-900/80 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 text-xs focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 transition-all"
                   required
                 />
@@ -153,6 +125,7 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
+                  autoComplete="current-password"
                   className="w-full pl-8 pr-9 py-2 bg-slate-900/80 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 text-xs focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 transition-all"
                   required
                 />
@@ -166,16 +139,7 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
               </div>
             </div>
 
-            <div className="flex items-center justify-between text-[11px] pt-1">
-              <label className="flex items-center gap-1.5 text-slate-400 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="w-3.5 h-3.5 rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0 focus:ring-offset-0 cursor-pointer"
-                />
-                Lembrar sessão
-              </label>
+            <div className="flex items-center justify-end text-[11px] pt-1">
               <span className="text-slate-500 text-[10px]">Criptografia SSL 256-bit</span>
             </div>
 
@@ -194,38 +158,6 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
               )}
             </button>
           </form>
-
-          {/* Quick Demo Access Buttons */}
-          <div className="mt-5 pt-4 border-t border-slate-700/60">
-            <div className="flex items-center justify-between text-[10px] text-slate-400 mb-2">
-              <span className="flex items-center gap-1 font-medium">
-                <Sparkles className="w-3 h-3 text-amber-400" /> Entrar com perfis de teste:
-              </span>
-            </div>
-            <div className="grid grid-cols-3 gap-1.5">
-              <button
-                type="button"
-                onClick={() => handleQuickDemoLogin('ADMIN')}
-                className="py-1.5 px-2 bg-slate-900/60 hover:bg-indigo-950/80 border border-slate-700 hover:border-indigo-500/60 rounded-md text-[10px] font-medium text-slate-300 hover:text-indigo-300 transition-all text-center truncate"
-              >
-                👑 Admin
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickDemoLogin('GERENTE')}
-                className="py-1.5 px-2 bg-slate-900/60 hover:bg-indigo-950/80 border border-slate-700 hover:border-indigo-500/60 rounded-md text-[10px] font-medium text-slate-300 hover:text-indigo-300 transition-all text-center truncate"
-              >
-                📊 Gerente
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickDemoLogin('SUPORTE')}
-                className="py-1.5 px-2 bg-slate-900/60 hover:bg-indigo-950/80 border border-slate-700 hover:border-indigo-500/60 rounded-md text-[10px] font-medium text-slate-300 hover:text-indigo-300 transition-all text-center truncate"
-              >
-                🎧 Suporte
-              </button>
-            </div>
-          </div>
         </div>
 
         {/* Footer */}

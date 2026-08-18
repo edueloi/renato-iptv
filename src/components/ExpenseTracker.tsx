@@ -5,6 +5,7 @@ import {
 import { Expense } from '../types';
 import { formatDateBR } from '../utils/masks';
 import { ConfirmModal } from './ConfirmModal';
+import { apiFetch } from '../utils/api';
 
 interface ExpenseTrackerProps {
   selectedMonth: string;
@@ -46,7 +47,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
   const fetchExpenses = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/expenses');
+      const res = await apiFetch('/api/expenses');
       if (res.ok) {
         const json = await res.json();
         setExpenses(json);
@@ -63,7 +64,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     if (!description || !value) return;
 
     try {
-      const res = await fetch('/api/expenses', {
+      const res = await apiFetch('/api/expenses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -103,7 +104,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
     if (!editingExpense || !editValue) return;
 
     try {
-      const res = await fetch(`/api/expenses/${editingExpense.id}`, {
+      const res = await apiFetch(`/api/expenses/${editingExpense.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -126,7 +127,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
 
   const handleCopyRecurrent = async () => {
     try {
-      const res = await fetch('/api/expenses/copy-recurrent', {
+      const res = await apiFetch('/api/expenses/copy-recurrent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ targetMonth: selectedMonth })
@@ -149,7 +150,7 @@ export const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
   const executeDeleteExpense = async () => {
     if (!deleteExpenseId) return;
     try {
-      const res = await fetch(`/api/expenses/${deleteExpenseId}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/expenses/${deleteExpenseId}`, { method: 'DELETE' });
       if (res.ok) {
         setNotice('Despesa removida com sucesso.');
         setTimeout(() => setNotice(null), 3000);

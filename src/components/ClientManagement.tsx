@@ -8,6 +8,7 @@ import {
 import { Client, ClientStatus, ServiceType } from '../types';
 import { formatDateBR, formatPhoneBR, maskPhoneInput, parseBRDateToYMD, getFirstName } from '../utils/masks';
 import { ConfirmModal } from './ConfirmModal';
+import { apiFetch } from '../utils/api';
 
 interface ClientManagementProps {
   clients: Client[];
@@ -228,7 +229,7 @@ export const ClientManagement: React.FC<ClientManagementProps> = ({
   // Quick Status Change API Call
   const handleQuickStatusChange = async (clientId: string, newStatus: ClientStatus) => {
     try {
-      const res = await fetch(`/api/clients/${clientId}`, {
+      const res = await apiFetch(`/api/clients/${clientId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus })
@@ -295,7 +296,7 @@ export const ClientManagement: React.FC<ClientManagementProps> = ({
       const computedDueDate = calculateNewDueDate(payingClient, advanceMonths, calcBase);
       const computedValue = customValuePaid ? parseFloat(customValuePaid) : payingClient.value * advanceMonths;
 
-      const res = await fetch(`/api/clients/${payingClient.id}/pay`, {
+      const res = await apiFetch(`/api/clients/${payingClient.id}/pay`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

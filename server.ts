@@ -1,30 +1,65 @@
+import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import * as XLSX from 'xlsx';
 import nodemailer from 'nodemailer';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import { PrismaClient } from '@prisma/client';
 import { Client, Expense, BotConfig, BotLog, ClientStatus, ServiceType, EmailSettings, EmailLog, MessageTemplate } from './src/types';
+import * as whatsapp from './whatsapp';
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
+
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET não configurado. Defina a variável de ambiente JWT_SECRET no .env.');
+}
+
+const prisma = new PrismaClient();
 
 app.use(express.json({ limit: '10mb' }));
 
-// Initial seed file path
-const DATA_DIR = path.join(process.cwd(), 'data');
-const DATA_FILE = path.join(DATA_DIR, 'db_store.json');
+// ============ AUTH ============
+interface AuthUser {
+  id: string;
+  username: string;
+  name: string;
+  role: string;
+}
 
-// Interface for DB JSON
-interface DbStore {
-  clients: Client[];
-  expenses: Expense[];
-  botConfig: BotConfig;
-  botLogs: BotLog[];
-  emailSettings?: EmailSettings;
-  emailLogs?: EmailLog[];
-  messageTemplates?: MessageTemplate[];
-  appsList?: string[];
+function signToken(user: AuthUser): string {
+  return jwt.sign(user, JWT_SECRET as string, { expiresIn: '30d' });
+}
+
+function authMiddleware(req: express.Request & { user?: AuthUser }, res: express.Response, next: express.NextFunction) {
+  const header = req.headers.authorization;
+  const token = header && header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) {
+    return res.status(401).json({ error: 'Não autenticado.' });
+  }
+  try {
+    req.user = jwt.verify(token, JWT_SECRET as string) as AuthUser;
+    next();
+  } catch {
+    return res.status(401).json({ error: 'Sessão inválida ou expirada.' });
+  }
+}
+
+// Wraps an async route handler so a thrown/rejected error becomes a JSON 500
+// instead of leaving the request hanging with no response.
+function ah(fn: (req: express.Request, res: express.Response) => Promise<any>) {
+  return (req: express.Request, res: express.Response) => {
+    fn(req, res).catch((err: any) => {
+      console.error(`Erro na rota ${req.method} ${req.originalUrl}:`, err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: err?.message || 'Erro interno do servidor' });
+      }
+    });
+  };
 }
 
 // Smart phone number cleaner (supports 11-99782-8585, (11) 99782-8585, 11997828585, +55 11 99782-8585, etc.)
@@ -39,143 +74,396 @@ function cleanPhoneForImport(raw: any): string {
   return digits;
 }
 
-// Default Seed Generator - Pure Clean System
-function getInitialData(): DbStore {
-  const clients: Client[] = [];
-  const expenses: Expense[] = [];
-  const botLogs: BotLog[] = [];
-
-  const botConfig: BotConfig = {
-    enabled: true,
-    intervalMinutes: 5,
-    targetInactive: true,
-    targetOverdue: true,
-    targetUpcoming: true,
-    daysBeforeDueNotice: 2,
-    templateInactive: "Olá {nome}! Notamos que sua assinatura IPTV/P2P ({app}) está inativa. Temos uma promoção especial para você retornar hoje por apenas R$ {valor}! Responda essa mensagem para reativar seu acesso instantaneamente.",
-    templateOverdue: "Aviso de Vencimento: Olá {nome}, sua mensalidade IPTV/P2P venceu em {vencimento}. Valor: R$ {valor}. Chave PIX: pix@suaempresa.com. Encaminhe o comprovante para liberação imediata!",
-    templateUpcoming: "Olá {nome}, lembrete amigo: sua assinatura IPTV/P2P ({app}) vence em {vencimento}. Garanta a renovação antecipada para continuar assistindo sem interrupção! Valor: R$ {valor}.",
-    lastRunTimestamp: new Date().toISOString(),
-    nextRunTimestamp: new Date(Date.now() + 5 * 60 * 1000).toISOString()
-  };
-
-  const emailSettings: EmailSettings = {
-    smtpHost: 'smtp.gmail.com',
-    smtpPort: 587,
-    secure: false,
-    smtpUser: '',
-    smtpPass: '',
-    senderName: 'IPTV & P2P Pro',
-    senderEmail: '',
-    backupRecipientEmail: '',
-    autoBackupSchedule: 'DISABLED'
-  };
-
-  const emailLogs: EmailLog[] = [];
-
-  const messageTemplates: MessageTemplate[] = [
-    {
-      id: 'tpl-cobranca',
-      title: '⚠️ Cobrança de Vencimento',
-      category: 'COBRANCA',
-      content: 'Olá {nome}! Sua assinatura de IPTV/P2P ({app}) venceu em {vencimento}.\n\nValor para renovação: R$ {valor}.\n\nPara efetuar o pagamento via PIX e manter seu acesso ativo sem interrupções, responda a esta mensagem!',
-      isSystemDefault: true,
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: 'tpl-lembrete',
-      title: '💡 Lembrete Preventivo de Renovação',
-      category: 'LEMBRETE',
-      content: 'Olá {nome}! Tudo bem? Passando para lembrar que sua assinatura do aplicativo {app} vencerá em {vencimento}.\n\nValor da renovação: R$ {valor}.\n\nGaranta sua renovação antecipada e evite bloqueios!',
-      isSystemDefault: true,
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: 'tpl-pix',
-      title: '💲 Dados para Pagamento PIX',
-      category: 'PIX',
-      content: 'Olá {nome}! Segue os dados para pagamento da sua renovação ({app}):\n\n📌 Chave PIX: {pix}\n💰 Valor: R$ {valor}\n\nApós realizar a transferência, por gentileza nos envie o comprovante por aqui!',
-      isSystemDefault: true,
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: 'tpl-dados-acesso',
-      title: '🔑 Dados de Acesso ao Aplicativo',
-      category: 'DADOS_ACESSO',
-      content: 'Olá {nome}! Segue seus dados de acesso configurados:\n\n👤 Usuário: {usuario}\n🔑 Senha: {senha}\n📲 App: {app}\n📅 Vencimento: {vencimento}\n\nQualquer dúvida na instalação ou login, estamos à disposição!',
-      isSystemDefault: true,
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: 'tpl-boas-vindas',
-      title: '🎉 Mensagem de Boas-Vindas',
-      category: 'BOAS_VINDAS',
-      content: 'Seja muito bem-vindo(a), {nome}! Agradecemos a confiança no nosso serviço no app {app}.\n\nSalve nosso contato em sua agenda para receber suporte rápido e atualizações!',
-      isSystemDefault: true,
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: 'tpl-reativacao',
-      title: '🎁 Oferta Especial de Reativação',
-      category: 'PROMOCAO',
-      content: 'Olá {nome}! Sentimos sua falta! Volte para a melhor grade de canais, filmes e séries sem travamento no app {app}.\n\nPreparamos um desconto exclusivo para seu retorno! Responda esta mensagem para resgatar.',
-      isSystemDefault: true,
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: 'tpl-suporte',
-      title: '🛠️ Atualização de Aplicativo / Suporte',
-      category: 'SUPORTE',
-      content: 'Olá {nome}! Comunicado importante: lançamos uma atualização para o app {app}.\n\nCaso precise de suporte ou ajuda para atualizar, responda esta mensagem!',
-      isSystemDefault: true,
-      createdAt: new Date().toISOString()
-    }
-  ];
-
-  const appsList: string[] = [
-    'XCIPTV',
-    'IBO Player',
-    'IPTV Smarters Pro',
-    'SSIPTV',
-    'TVK Player',
-    'Unitv',
-    'WebPlayer',
-    'SmartOne',
-    'Kodi',
-    'GSE Smart IPTV',
-    'TiviMate'
-  ];
-
-  return { clients, expenses, botConfig, botLogs, emailSettings, emailLogs, messageTemplates, appsList };
+// ============ DATA LAYER (MySQL via Prisma) ============
+// DbStore keeps the exact same in-memory shape the rest of this file already
+// works with — only how it's loaded/persisted changed (MySQL instead of a JSON file).
+interface DbStore {
+  clients: Client[];
+  expenses: Expense[];
+  botConfig: BotConfig;
+  botLogs: BotLog[];
+  emailSettings?: EmailSettings;
+  emailLogs?: EmailLog[];
+  messageTemplates?: MessageTemplate[];
+  appsList?: string[];
 }
 
-// Load / Save Store helpers
-function readDb(): DbStore {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    if (!fs.existsSync(DATA_FILE)) {
-      const initial = getInitialData();
-      fs.writeFileSync(DATA_FILE, JSON.stringify(initial, null, 2));
-      return initial;
-    }
-    const raw = fs.readFileSync(DATA_FILE, 'utf-8');
-    return JSON.parse(raw);
-  } catch (err) {
-    console.error('Error reading DB file, returning fallback:', err);
-    return getInitialData();
+const DEFAULT_BOT_CONFIG: BotConfig = {
+  enabled: true,
+  intervalMinutes: 5,
+  targetInactive: true,
+  targetOverdue: true,
+  targetUpcoming: true,
+  daysBeforeDueNotice: 2,
+  templateInactive: "Olá {nome}! Notamos que sua assinatura IPTV/P2P ({app}) está inativa. Temos uma promoção especial para você retornar hoje por apenas R$ {valor}! Responda essa mensagem para reativar seu acesso instantaneamente.",
+  templateOverdue: "Aviso de Vencimento: Olá {nome}, sua mensalidade IPTV/P2P venceu em {vencimento}. Valor: R$ {valor}. Chave PIX: pix@suaempresa.com. Encaminhe o comprovante para liberação imediata!",
+  templateUpcoming: "Olá {nome}, lembrete amigo: sua assinatura IPTV/P2P ({app}) vence em {vencimento}. Garanta a renovação antecipada para continuar assistindo sem interrupção! Valor: R$ {valor}.",
+  lastRunTimestamp: new Date().toISOString(),
+  nextRunTimestamp: new Date(Date.now() + 5 * 60 * 1000).toISOString()
+};
+
+const DEFAULT_EMAIL_SETTINGS: EmailSettings = {
+  smtpHost: 'smtp.gmail.com',
+  smtpPort: 587,
+  secure: false,
+  smtpUser: '',
+  smtpPass: '',
+  senderName: 'IPTV & P2P Pro',
+  senderEmail: '',
+  backupRecipientEmail: '',
+  autoBackupSchedule: 'DISABLED'
+};
+
+const DEFAULT_MESSAGE_TEMPLATES: MessageTemplate[] = [
+  {
+    id: 'tpl-cobranca',
+    title: '⚠️ Cobrança de Vencimento',
+    category: 'COBRANCA',
+    content: 'Olá {nome}! Sua assinatura de IPTV/P2P ({app}) venceu em {vencimento}.\n\nValor para renovação: R$ {valor}.\n\nPara efetuar o pagamento via PIX e manter seu acesso ativo sem interrupções, responda a esta mensagem!',
+    isSystemDefault: true,
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: 'tpl-lembrete',
+    title: '💡 Lembrete Preventivo de Renovação',
+    category: 'LEMBRETE',
+    content: 'Olá {nome}! Tudo bem? Passando para lembrar que sua assinatura do aplicativo {app} vencerá em {vencimento}.\n\nValor da renovação: R$ {valor}.\n\nGaranta sua renovação antecipada e evite bloqueios!',
+    isSystemDefault: true,
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: 'tpl-pix',
+    title: '💲 Dados para Pagamento PIX',
+    category: 'PIX',
+    content: 'Olá {nome}! Segue os dados para pagamento da sua renovação ({app}):\n\n📌 Chave PIX: {pix}\n💰 Valor: R$ {valor}\n\nApós realizar a transferência, por gentileza nos envie o comprovante por aqui!',
+    isSystemDefault: true,
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: 'tpl-dados-acesso',
+    title: '🔑 Dados de Acesso ao Aplicativo',
+    category: 'DADOS_ACESSO',
+    content: 'Olá {nome}! Segue seus dados de acesso configurados:\n\n👤 Usuário: {usuario}\n🔑 Senha: {senha}\n📲 App: {app}\n📅 Vencimento: {vencimento}\n\nQualquer dúvida na instalação ou login, estamos à disposição!',
+    isSystemDefault: true,
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: 'tpl-boas-vindas',
+    title: '🎉 Mensagem de Boas-Vindas',
+    category: 'BOAS_VINDAS',
+    content: 'Seja muito bem-vindo(a), {nome}! Agradecemos a confiança no nosso serviço no app {app}.\n\nSalve nosso contato em sua agenda para receber suporte rápido e atualizações!',
+    isSystemDefault: true,
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: 'tpl-reativacao',
+    title: '🎁 Oferta Especial de Reativação',
+    category: 'PROMOCAO',
+    content: 'Olá {nome}! Sentimos sua falta! Volte para a melhor grade de canais, filmes e séries sem travamento no app {app}.\n\nPreparamos um desconto exclusivo para seu retorno! Responda esta mensagem para resgatar.',
+    isSystemDefault: true,
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: 'tpl-suporte',
+    title: '🛠️ Atualização de Aplicativo / Suporte',
+    category: 'SUPORTE',
+    content: 'Olá {nome}! Comunicado importante: lançamos uma atualização para o app {app}.\n\nCaso precise de suporte ou ajuda para atualizar, responda esta mensagem!',
+    isSystemDefault: true,
+    createdAt: new Date().toISOString()
   }
+];
+
+const DEFAULT_APPS_LIST: string[] = [
+  'XCIPTV', 'IBO Player', 'IPTV Smarters Pro', 'SSIPTV', 'TVK Player',
+  'Unitv', 'WebPlayer', 'SmartOne', 'Kodi', 'GSE Smart IPTV', 'TiviMate'
+];
+
+// ---- Row <-> App-shape mapping helpers ----
+const toDateOnly = (d?: Date | null): string | undefined => (d ? d.toISOString().split('T')[0] : undefined);
+const toIso = (d?: Date | null): string | undefined => (d ? d.toISOString() : undefined);
+
+function clientOut(row: any): Client {
+  return {
+    id: row.id,
+    generalQty: row.generalQty ?? undefined,
+    username: row.username,
+    dueDate: toDateOnly(row.dueDate)!,
+    status: row.status as ClientStatus,
+    value: Number(row.value),
+    extraField: row.extraField ?? undefined,
+    contact: row.contact,
+    appUsed: row.appUsed,
+    serviceType: row.serviceType as ServiceType,
+    notes: row.notes ?? undefined,
+    createdAt: toDateOnly(row.createdAt)!,
+    updatedAt: toDateOnly(row.updatedAt)!,
+    botStatus: row.botStatus ?? undefined,
+    lastBotSentAt: toIso(row.lastBotSentAt),
+    botAttempts: row.botAttempts ?? undefined,
+  };
 }
 
-function writeDb(store: DbStore): void {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    fs.writeFileSync(DATA_FILE, JSON.stringify(store, null, 2));
-  } catch (err) {
-    console.error('Error writing DB file:', err);
+function clientRow(c: Client) {
+  return {
+    generalQty: c.generalQty ?? null,
+    username: c.username,
+    dueDate: new Date(c.dueDate),
+    status: c.status,
+    value: c.value,
+    extraField: c.extraField ?? null,
+    contact: c.contact,
+    appUsed: c.appUsed,
+    serviceType: c.serviceType,
+    notes: c.notes ?? null,
+    botStatus: c.botStatus ?? null,
+    lastBotSentAt: c.lastBotSentAt ? new Date(c.lastBotSentAt) : null,
+    botAttempts: c.botAttempts ?? null,
+    createdAt: new Date(c.createdAt),
+    updatedAt: new Date(c.updatedAt),
+  };
+}
+
+function expenseOut(row: any): Expense {
+  return {
+    id: row.id,
+    monthRef: row.monthRef,
+    description: row.description,
+    category: row.category,
+    value: Number(row.value),
+    date: toDateOnly(row.date)!,
+    notes: row.notes ?? undefined,
+    isRecurring: row.isRecurring,
+    createdAt: toIso(row.createdAt)!,
+  };
+}
+
+function expenseRow(e: Expense) {
+  return {
+    monthRef: e.monthRef,
+    description: e.description,
+    category: e.category,
+    value: e.value,
+    date: new Date(e.date),
+    notes: e.notes ?? null,
+    isRecurring: !!e.isRecurring,
+    createdAt: new Date(e.createdAt),
+  };
+}
+
+function botLogOut(row: any): BotLog {
+  return {
+    id: row.id,
+    clientId: row.clientId ?? '',
+    clientUsername: row.clientUsername,
+    contact: row.contact,
+    messageType: row.messageType,
+    messageContent: row.messageContent,
+    status: row.status,
+    errorMessage: row.errorMessage ?? undefined,
+    timestamp: toIso(row.timestamp)!,
+  };
+}
+
+function botLogRow(l: BotLog) {
+  return {
+    clientId: l.clientId || null,
+    clientUsername: l.clientUsername,
+    contact: l.contact,
+    messageType: l.messageType,
+    messageContent: l.messageContent,
+    status: l.status,
+    errorMessage: l.errorMessage ?? null,
+    timestamp: new Date(l.timestamp),
+  };
+}
+
+function emailLogOut(row: any): EmailLog {
+  return {
+    id: row.id,
+    recipient: row.recipient,
+    subject: row.subject,
+    type: row.type,
+    status: row.status,
+    errorMessage: row.errorMessage ?? undefined,
+    timestamp: toIso(row.timestamp)!,
+  };
+}
+
+function emailLogRow(l: EmailLog) {
+  return {
+    recipient: l.recipient,
+    subject: l.subject,
+    type: l.type,
+    status: l.status,
+    errorMessage: l.errorMessage ?? null,
+    timestamp: new Date(l.timestamp),
+  };
+}
+
+function templateOut(row: any): MessageTemplate {
+  return {
+    id: row.id,
+    title: row.title,
+    category: row.category,
+    content: row.content,
+    isSystemDefault: row.isSystemDefault,
+    createdAt: toIso(row.createdAt)!,
+  };
+}
+
+function templateRow(t: MessageTemplate) {
+  return {
+    title: t.title,
+    category: t.category,
+    content: t.content,
+    isSystemDefault: !!t.isSystemDefault,
+    createdAt: new Date(t.createdAt),
+  };
+}
+
+function botConfigOut(row: any): BotConfig {
+  return {
+    enabled: row.enabled,
+    intervalMinutes: row.intervalMinutes,
+    targetInactive: row.targetInactive,
+    targetOverdue: row.targetOverdue,
+    targetUpcoming: row.targetUpcoming,
+    daysBeforeDueNotice: row.daysBeforeDueNotice,
+    templateInactive: row.templateInactive,
+    templateOverdue: row.templateOverdue,
+    templateUpcoming: row.templateUpcoming,
+    lastRunTimestamp: toIso(row.lastRunTimestamp),
+    nextRunTimestamp: toIso(row.nextRunTimestamp),
+  };
+}
+
+function botConfigRow(b: BotConfig) {
+  return {
+    enabled: b.enabled,
+    intervalMinutes: b.intervalMinutes,
+    targetInactive: b.targetInactive,
+    targetOverdue: b.targetOverdue,
+    targetUpcoming: b.targetUpcoming,
+    daysBeforeDueNotice: b.daysBeforeDueNotice,
+    templateInactive: b.templateInactive,
+    templateOverdue: b.templateOverdue,
+    templateUpcoming: b.templateUpcoming,
+    lastRunTimestamp: b.lastRunTimestamp ? new Date(b.lastRunTimestamp) : null,
+    nextRunTimestamp: b.nextRunTimestamp ? new Date(b.nextRunTimestamp) : null,
+  };
+}
+
+function emailSettingsOut(row: any): EmailSettings {
+  return {
+    smtpHost: row.smtpHost,
+    smtpPort: row.smtpPort,
+    secure: row.secure,
+    smtpUser: row.smtpUser ?? '',
+    smtpPass: row.smtpPass ?? '',
+    senderName: row.senderName,
+    senderEmail: row.senderEmail ?? '',
+    backupRecipientEmail: row.backupRecipientEmail ?? '',
+    backupCcEmail: row.backupCcEmail ?? undefined,
+    autoBackupSchedule: row.autoBackupSchedule,
+    backupTime: row.backupTime ?? undefined,
+    backupFormat: row.backupFormat ?? undefined,
+    lastBackupSentAt: toIso(row.lastBackupSentAt),
+    nextBackupScheduledAt: toIso(row.nextBackupScheduledAt),
+  };
+}
+
+function emailSettingsRow(s: EmailSettings) {
+  return {
+    smtpHost: s.smtpHost,
+    smtpPort: s.smtpPort,
+    secure: !!s.secure,
+    smtpUser: s.smtpUser ?? null,
+    smtpPass: s.smtpPass ?? null,
+    senderName: s.senderName,
+    senderEmail: s.senderEmail ?? null,
+    backupRecipientEmail: s.backupRecipientEmail ?? null,
+    backupCcEmail: s.backupCcEmail ?? null,
+    autoBackupSchedule: s.autoBackupSchedule,
+    backupTime: s.backupTime ?? null,
+    backupFormat: s.backupFormat ?? null,
+    lastBackupSentAt: s.lastBackupSentAt ? new Date(s.lastBackupSentAt) : null,
+    nextBackupScheduledAt: s.nextBackupScheduledAt ? new Date(s.nextBackupScheduledAt) : null,
+  };
+}
+
+async function readDb(): Promise<DbStore> {
+  const [clients, expenses, botConfigDb, botLogs, emailSettingsDb, emailLogs, templates, apps] = await Promise.all([
+    prisma.client.findMany({ orderBy: { createdAt: 'desc' } }),
+    prisma.expense.findMany({ orderBy: { createdAt: 'desc' } }),
+    prisma.botConfig.findUnique({ where: { id: 1 } }),
+    prisma.botLog.findMany({ orderBy: { timestamp: 'desc' } }),
+    prisma.emailSettings.findUnique({ where: { id: 1 } }),
+    prisma.emailLog.findMany({ orderBy: { timestamp: 'desc' } }),
+    prisma.messageTemplate.findMany({ orderBy: { createdAt: 'asc' } }),
+    prisma.appOption.findMany({ orderBy: { id: 'asc' } }),
+  ]);
+
+  return {
+    clients: clients.map(clientOut),
+    expenses: expenses.map(expenseOut),
+    botConfig: botConfigDb ? botConfigOut(botConfigDb) : DEFAULT_BOT_CONFIG,
+    botLogs: botLogs.map(botLogOut),
+    emailSettings: emailSettingsDb ? emailSettingsOut(emailSettingsDb) : DEFAULT_EMAIL_SETTINGS,
+    emailLogs: emailLogs.map(emailLogOut),
+    messageTemplates: templates.map(templateOut),
+    appsList: apps.map(a => a.name),
+  };
+}
+
+async function writeDb(store: DbStore): Promise<void> {
+  const clientIds = store.clients.map(c => c.id);
+  const expenseIds = store.expenses.map(e => e.id);
+  const botLogIds = store.botLogs.map(l => l.id);
+  const emailLogIds = (store.emailLogs || []).map(l => l.id);
+  const templateIds = (store.messageTemplates || []).map(t => t.id);
+  const appNames = store.appsList || [];
+
+  // Delete rows that are no longer present in the in-memory arrays (mirrors the
+  // old "whole document replace" semantics of the JSON file store).
+  await prisma.$transaction([
+    prisma.client.deleteMany({ where: { id: { notIn: clientIds } } }),
+    prisma.expense.deleteMany({ where: { id: { notIn: expenseIds } } }),
+    prisma.botLog.deleteMany({ where: { id: { notIn: botLogIds } } }),
+    prisma.emailLog.deleteMany({ where: { id: { notIn: emailLogIds } } }),
+    prisma.messageTemplate.deleteMany({ where: { id: { notIn: templateIds } } }),
+    prisma.appOption.deleteMany({ where: { name: { notIn: appNames } } }),
+  ]);
+
+  for (const c of store.clients) {
+    const row = clientRow(c);
+    await prisma.client.upsert({ where: { id: c.id }, create: { id: c.id, ...row }, update: row });
+  }
+  for (const e of store.expenses) {
+    const row = expenseRow(e);
+    await prisma.expense.upsert({ where: { id: e.id }, create: { id: e.id, ...row }, update: row });
+  }
+  for (const l of store.botLogs) {
+    const row = botLogRow(l);
+    await prisma.botLog.upsert({ where: { id: l.id }, create: { id: l.id, ...row }, update: row });
+  }
+  for (const l of store.emailLogs || []) {
+    const row = emailLogRow(l);
+    await prisma.emailLog.upsert({ where: { id: l.id }, create: { id: l.id, ...row }, update: row });
+  }
+  for (const t of store.messageTemplates || []) {
+    const row = templateRow(t);
+    await prisma.messageTemplate.upsert({ where: { id: t.id }, create: { id: t.id, ...row }, update: row });
+  }
+  for (const name of appNames) {
+    await prisma.appOption.upsert({ where: { name }, create: { name }, update: {} });
+  }
+
+  const botConfigData = botConfigRow(store.botConfig);
+  await prisma.botConfig.upsert({ where: { id: 1 }, create: { id: 1, ...botConfigData }, update: botConfigData });
+
+  if (store.emailSettings) {
+    const emailSettingsData = emailSettingsRow(store.emailSettings);
+    await prisma.emailSettings.upsert({ where: { id: 1 }, create: { id: 1, ...emailSettingsData }, update: emailSettingsData });
   }
 }
 
@@ -225,15 +513,15 @@ function updateClientStatuses(clients: Client[]): Client[] {
 }
 
 // Run bot queue background processor
-function processBotQueue() {
-  const store = readDb();
+async function processBotQueue() {
+  const store = await readDb();
   if (!store.botConfig.enabled) return;
 
   const now = new Date();
   const clients = updateClientStatuses(store.clients);
   let logsAdded = 0;
 
-  clients.forEach(client => {
+  for (const client of clients) {
     let shouldSend = false;
     let type: 'INATIVO' | 'VENCIDO' | 'A_VENCER' | 'MANUAL' = 'INATIVO';
     let template = '';
@@ -260,7 +548,9 @@ function processBotQueue() {
         .replace(/{valor}/g, client.value.toFixed(2))
         .replace(/{app}/g, client.appUsed || 'IPTV');
 
-      const isSuccess = Math.random() > 0.05; // 95% simulated delivery success
+      const result = await whatsapp.sendWhatsAppMessage(client.contact, formattedMsg);
+      const sendStatus: 'ENVIADO' | 'ERRO' = result.ok === true ? 'ENVIADO' : 'ERRO';
+      const sendError = result.ok === false ? result.error : undefined;
 
       const newLog: BotLog = {
         id: 'log-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
@@ -269,44 +559,73 @@ function processBotQueue() {
         contact: client.contact || 'Sem contato',
         messageType: type,
         messageContent: formattedMsg,
-        status: isSuccess ? 'ENVIADO' : 'ERRO',
-        errorMessage: isSuccess ? undefined : 'Número WhatsApp indisponível ou formato de telefone inválido.',
+        status: sendStatus,
+        errorMessage: sendError,
         timestamp: new Date().toISOString()
       };
 
       store.botLogs.unshift(newLog);
-      client.botStatus = isSuccess ? 'ENVIADO' : 'ERRO';
+      client.botStatus = sendStatus;
       client.lastBotSentAt = new Date().toISOString();
       logsAdded++;
+
+      // Small delay between real WhatsApp sends to reduce the risk of the number being flagged/banned.
+      await new Promise(resolve => setTimeout(resolve, 1500));
     }
-  });
+  }
 
   store.clients = clients;
   store.botConfig.lastRunTimestamp = now.toISOString();
   store.botConfig.nextRunTimestamp = new Date(now.getTime() + store.botConfig.intervalMinutes * 60 * 1000).toISOString();
 
-  writeDb(store);
+  await writeDb(store);
 }
 
 // Trigger interval every 5 minutes
-setInterval(processBotQueue, 5 * 60 * 1000);
+setInterval(() => {
+  processBotQueue().catch(err => console.error('Erro no processamento agendado do bot:', err));
+}, 5 * 60 * 1000);
 
-// API ROUTES
+// ============ API ROUTES ============
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', serverTime: new Date().toISOString() });
 });
 
+// LOGIN — the only account is the one created by `npm run db:seed` (prisma/seed.ts)
+app.post('/api/auth/login', ah(async (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Informe usuário e senha.' });
+  }
+
+  const user = await prisma.user.findUnique({ where: { username: String(username).trim() } });
+  if (!user) {
+    return res.status(401).json({ error: 'Usuário ou senha inválidos.' });
+  }
+
+  const valid = await bcrypt.compare(password, user.passwordHash);
+  if (!valid) {
+    return res.status(401).json({ error: 'Usuário ou senha inválidos.' });
+  }
+
+  const authUser: AuthUser = { id: user.id, username: user.username, name: user.name, role: user.role };
+  res.json({ token: signToken(authUser), user: authUser });
+}));
+
+// Everything below requires a valid session token
+app.use('/api', authMiddleware);
+
 // GET Clients
-app.get('/api/clients', (req, res) => {
-  const store = readDb();
+app.get('/api/clients', ah(async (req, res) => {
+  const store = await readDb();
   store.clients = updateClientStatuses(store.clients);
-  writeDb(store);
+  await writeDb(store);
   res.json(store.clients);
-});
+}));
 
 // CREATE / UPDATE Client
-app.post('/api/clients', (req, res) => {
-  const store = readDb();
+app.post('/api/clients', ah(async (req, res) => {
+  const store = await readDb();
   const body = req.body;
 
   const newClient: Client = {
@@ -327,12 +646,12 @@ app.post('/api/clients', (req, res) => {
   };
 
   store.clients.unshift(newClient);
-  writeDb(store);
+  await writeDb(store);
   res.status(201).json(newClient);
-});
+}));
 
-app.put('/api/clients/:id', (req, res) => {
-  const store = readDb();
+app.put('/api/clients/:id', ah(async (req, res) => {
+  const store = await readDb();
   const { id } = req.params;
   const index = store.clients.findIndex(c => c.id === id);
 
@@ -352,21 +671,21 @@ app.put('/api/clients/:id', (req, res) => {
   };
 
   store.clients[index] = updated;
-  writeDb(store);
+  await writeDb(store);
   res.json(updated);
-});
+}));
 
-app.delete('/api/clients/:id', (req, res) => {
-  const store = readDb();
+app.delete('/api/clients/:id', ah(async (req, res) => {
+  const store = await readDb();
   const { id } = req.params;
   store.clients = store.clients.filter(c => c.id !== id);
-  writeDb(store);
+  await writeDb(store);
   res.json({ success: true, message: 'Cliente removido com sucesso' });
-});
+}));
 
 // PAY / EXTEND CLIENT SUBSCRIPTION (SUPPORT ADVANCE PAYMENTS)
-app.post('/api/clients/:id/pay', (req, res) => {
-  const store = readDb();
+app.post('/api/clients/:id/pay', ah(async (req, res) => {
+  const store = await readDb();
   const { id } = req.params;
   const { newDueDate, valuePaid, newStatus = 'Ativo' } = req.body;
 
@@ -376,7 +695,7 @@ app.post('/api/clients/:id/pay', (req, res) => {
   }
 
   const client = store.clients[index];
-  
+
   store.clients[index] = {
     ...client,
     dueDate: newDueDate || client.dueDate,
@@ -386,13 +705,13 @@ app.post('/api/clients/:id/pay', (req, res) => {
     updatedAt: new Date().toISOString().split('T')[0]
   };
 
-  writeDb(store);
+  await writeDb(store);
   res.json({ success: true, client: store.clients[index] });
-});
+}));
 
 // BATCH CLIENT STATUS / RENEWAL
-app.post('/api/clients/batch-renew', (req, res) => {
-  const store = readDb();
+app.post('/api/clients/batch-renew', ah(async (req, res) => {
+  const store = await readDb();
   const { clientIds, addDaysCount = 30 } = req.body;
 
   if (!Array.isArray(clientIds)) {
@@ -417,9 +736,9 @@ app.post('/api/clients/batch-renew', (req, res) => {
     return client;
   });
 
-  writeDb(store);
+  await writeDb(store);
   res.json({ success: true, renewedCount: count });
-});
+}));
 
 // SPREADSHEET IMPORT API (Columns A to H mapping + Direct Excel Text Paste)
 app.post('/api/import/parse', (req, res) => {
@@ -547,13 +866,13 @@ app.post('/api/import/parse', (req, res) => {
   }
 });
 
-app.post('/api/import/confirm', (req, res) => {
+app.post('/api/import/confirm', ah(async (req, res) => {
   const { clientsToImport, overwriteExisting = false } = req.body;
   if (!Array.isArray(clientsToImport)) {
     return res.status(400).json({ error: 'Dados de importação inválidos.' });
   }
 
-  const store = readDb();
+  const store = await readDb();
   let importedCount = 0;
 
   if (overwriteExisting) {
@@ -581,19 +900,19 @@ app.post('/api/import/confirm', (req, res) => {
   });
 
   store.clients = updateClientStatuses(store.clients);
-  writeDb(store);
+  await writeDb(store);
 
   res.json({ success: true, importedCount, totalInSystem: store.clients.length });
-});
+}));
 
 // EXPENSES API
-app.get('/api/expenses', (req, res) => {
-  const store = readDb();
+app.get('/api/expenses', ah(async (req, res) => {
+  const store = await readDb();
   res.json(store.expenses);
-});
+}));
 
-app.post('/api/expenses', (req, res) => {
-  const store = readDb();
+app.post('/api/expenses', ah(async (req, res) => {
+  const store = await readDb();
   const body = req.body;
 
   const newExpense: Expense = {
@@ -609,12 +928,12 @@ app.post('/api/expenses', (req, res) => {
   };
 
   store.expenses.unshift(newExpense);
-  writeDb(store);
+  await writeDb(store);
   res.status(201).json(newExpense);
-});
+}));
 
-app.put('/api/expenses/:id', (req, res) => {
-  const store = readDb();
+app.put('/api/expenses/:id', ah(async (req, res) => {
+  const store = await readDb();
   const { id } = req.params;
   const body = req.body;
 
@@ -634,21 +953,21 @@ app.put('/api/expenses/:id', (req, res) => {
     isRecurring: body.isRecurring !== undefined ? Boolean(body.isRecurring) : store.expenses[index].isRecurring,
   };
 
-  writeDb(store);
+  await writeDb(store);
   res.json(store.expenses[index]);
-});
+}));
 
-app.delete('/api/expenses/:id', (req, res) => {
-  const store = readDb();
+app.delete('/api/expenses/:id', ah(async (req, res) => {
+  const store = await readDb();
   const { id } = req.params;
   store.expenses = store.expenses.filter(e => e.id !== id);
-  writeDb(store);
+  await writeDb(store);
   res.json({ success: true });
-});
+}));
 
 // COPY / REPLICATE RECURRING EXPENSES TO A TARGET MONTH (WITHOUT OVERWRITING HISTORICAL MONTHS)
-app.post('/api/expenses/copy-recurrent', (req, res) => {
-  const store = readDb();
+app.post('/api/expenses/copy-recurrent', ah(async (req, res) => {
+  const store = await readDb();
   const { targetMonth } = req.body; // e.g. "2026-08"
 
   if (!targetMonth) {
@@ -695,17 +1014,17 @@ app.post('/api/expenses/copy-recurrent', (req, res) => {
     }
   });
 
-  writeDb(store);
+  await writeDb(store);
   res.json({ success: true, addedCount });
-});
+}));
 
 // FINANCIAL METRICS & CYCLE 19-TO-19 REPORTING
-app.get('/api/financials', (req, res) => {
-  const store = readDb();
+app.get('/api/financials', ah(async (req, res) => {
+  const store = await readDb();
   const clients = updateClientStatuses(store.clients);
 
   const monthParam = (req.query.month as string) || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
-  
+
   // Calculate cycle 19 to 19 for specified month
   // e.g., for Month 2026-08, the 19-to-19 cycle is from 19/07/2026 to 19/08/2026
   const [yearStr, monthStr] = monthParam.split('-');
@@ -735,7 +1054,7 @@ app.get('/api/financials', (req, res) => {
   const netProfit = totalRevenue - totalExpenses;
 
   // Previous cycle estimated metrics for comparison (e.g., 85% baseline or calculated)
-  const prevCycleRevenue = totalRevenue * 0.88; 
+  const prevCycleRevenue = totalRevenue * 0.88;
   const prevCycleExpenses = totalExpenses * 0.92;
   const prevCycleProfit = prevCycleRevenue - prevCycleExpenses;
 
@@ -746,7 +1065,7 @@ app.get('/api/financials', (req, res) => {
   const currentMonthPrefix = `${yearStr}-${monthStr}`;
   const gainsCount = clients.filter(c => c.createdAt && c.createdAt.startsWith(currentMonthPrefix)).length || Math.max(1, Math.floor(activeClients.length * 0.15));
   const lossesCount = clients.filter(c => c.status === 'Inativo').length;
-  
+
   const totalBase = (clients.length || 1);
   const churnRatePercent = ((lossesCount / totalBase) * 100);
 
@@ -767,11 +1086,11 @@ app.get('/api/financials', (req, res) => {
     churnRatePercent,
     monthExpensesList: monthExpenses
   });
-});
+}));
 
 // DETAILED LEDGER (ENTRADAS & SAÍDAS LINHA A LINHA + DIA/MÊS/ANO)
-app.get('/api/financials/ledger', (req, res) => {
-  const store = readDb();
+app.get('/api/financials/ledger', ah(async (req, res) => {
+  const store = await readDb();
   const clients = updateClientStatuses(store.clients);
 
   // Combine clients (Entradas) and expenses (Saídas) into a unified itemized timeline
@@ -865,46 +1184,73 @@ app.get('/api/financials/ledger', (req, res) => {
     monthlyList,
     yearlyList
   });
-});
+}));
 
 // BOT & AUTOMATION ENDPOINTS
-app.get('/api/bot/config', (req, res) => {
-  const store = readDb();
+app.get('/api/bot/config', ah(async (req, res) => {
+  const store = await readDb();
   res.json(store.botConfig);
-});
+}));
 
-app.put('/api/bot/config', (req, res) => {
-  const store = readDb();
+app.put('/api/bot/config', ah(async (req, res) => {
+  const store = await readDb();
   store.botConfig = {
     ...store.botConfig,
     ...req.body
   };
-  writeDb(store);
+  await writeDb(store);
   res.json(store.botConfig);
-});
+}));
 
-app.get('/api/bot/logs', (req, res) => {
-  const store = readDb();
+app.get('/api/bot/logs', ah(async (req, res) => {
+  const store = await readDb();
   res.json(store.botLogs);
-});
+}));
 
-app.post('/api/bot/trigger', (req, res) => {
-  processBotQueue();
-  const store = readDb();
+app.post('/api/bot/trigger', ah(async (req, res) => {
+  await processBotQueue();
+  const store = await readDb();
   res.json({
     success: true,
     message: 'Disparo manual executado com sucesso!',
     lastRunTimestamp: store.botConfig.lastRunTimestamp,
     totalLogs: store.botLogs.length
   });
+}));
+
+app.delete('/api/bot/logs', ah(async (req, res) => {
+  const store = await readDb();
+  store.botLogs = [];
+  await writeDb(store);
+  res.json({ success: true });
+}));
+
+// WHATSAPP CONNECTION (Baileys)
+app.get('/api/whatsapp/status', (req, res) => {
+  res.json(whatsapp.getStatus());
 });
 
-app.delete('/api/bot/logs', (req, res) => {
-  const store = readDb();
-  store.botLogs = [];
-  writeDb(store);
+app.post('/api/whatsapp/connect', ah(async (req, res) => {
+  whatsapp.connect(true).catch(err => console.error('[WhatsApp] Erro ao conectar:', err));
+  res.json({ success: true, message: 'Gerando QR Code...' });
+}));
+
+app.post('/api/whatsapp/disconnect', ah(async (req, res) => {
+  await whatsapp.disconnectSession();
   res.json({ success: true });
-});
+}));
+
+app.post('/api/whatsapp/test', ah(async (req, res) => {
+  const { phone, message } = req.body;
+  if (!phone || !message) {
+    return res.status(400).json({ error: 'Informe o telefone e a mensagem de teste.' });
+  }
+  const result = await whatsapp.sendWhatsAppMessage(phone, message);
+  if (result.ok === false) {
+    return res.status(502).json({ error: result.error });
+  }
+  res.json({ success: true });
+}));
 
 // Helper: Nodemailer transporter creator
 function createTransporter(settings: EmailSettings) {
@@ -926,19 +1272,9 @@ function createTransporter(settings: EmailSettings) {
 }
 
 // EMAIL MARKETING & BACKUP ENDPOINTS
-app.get('/api/email/settings', (req, res) => {
-  const db = readDb();
-  const settings = db.emailSettings || {
-    smtpHost: 'smtp.gmail.com',
-    smtpPort: 587,
-    secure: false,
-    smtpUser: '',
-    smtpPass: '',
-    senderName: 'IPTV & P2P Pro',
-    senderEmail: '',
-    backupRecipientEmail: '',
-    autoBackupSchedule: 'DISABLED'
-  };
+app.get('/api/email/settings', ah(async (req, res) => {
+  const db = await readDb();
+  const settings = db.emailSettings || DEFAULT_EMAIL_SETTINGS;
 
   // Mask pass for security when sending to frontend
   const maskedSettings = {
@@ -950,23 +1286,13 @@ app.get('/api/email/settings', (req, res) => {
     settings: maskedSettings,
     logs: db.emailLogs || []
   });
-});
+}));
 
-app.post('/api/email/settings', (req, res) => {
-  const db = readDb();
+app.post('/api/email/settings', ah(async (req, res) => {
+  const db = await readDb();
   const incoming = req.body;
 
-  const currentSettings = db.emailSettings || {
-    smtpHost: 'smtp.gmail.com',
-    smtpPort: 587,
-    secure: false,
-    smtpUser: '',
-    smtpPass: '',
-    senderName: 'IPTV & P2P Pro',
-    senderEmail: '',
-    backupRecipientEmail: '',
-    autoBackupSchedule: 'DISABLED'
-  };
+  const currentSettings = db.emailSettings || DEFAULT_EMAIL_SETTINGS;
 
   let finalPass = incoming.smtpPass;
   // If user passed masked or empty string and we already had a pass, keep old
@@ -994,13 +1320,13 @@ app.post('/api/email/settings', (req, res) => {
     )
   };
 
-  writeDb(db);
+  await writeDb(db);
   res.json({ success: true, settings: db.emailSettings });
-});
+}));
 
 function calculateNextBackupDate(schedule: string, timeStr: string): string | undefined {
   if (!schedule || schedule === 'DISABLED') return undefined;
-  
+
   const [hours, minutes] = (timeStr || '08:00').split(':').map(Number);
   const now = new Date();
   const next = new Date();
@@ -1028,11 +1354,11 @@ function calculateNextBackupDate(schedule: string, timeStr: string): string | un
   return next.toISOString();
 }
 
-app.post('/api/email/test', async (req, res) => {
+app.post('/api/email/test', ah(async (req, res) => {
   try {
-    const db = readDb();
+    const db = await readDb();
     const settings: EmailSettings = req.body.settings || db.emailSettings;
-    
+
     // If pass is masked, use stored pass
     if (settings.smtpPass === '••••••••' && db.emailSettings) {
       settings.smtpPass = db.emailSettings.smtpPass;
@@ -1084,13 +1410,13 @@ app.post('/api/email/test', async (req, res) => {
       timestamp: new Date().toISOString()
     };
     db.emailLogs = [log, ...(db.emailLogs || [])].slice(0, 100);
-    writeDb(db);
+    await writeDb(db);
 
     res.json({ success: true, messageId: info.messageId });
   } catch (err: any) {
     console.error('SMTP Test Error:', err);
     try {
-      const db = readDb();
+      const db = await readDb();
       const targetEmail = req.body?.targetEmail || req.body?.settings?.smtpUser || 'Desconhecido';
       const log: EmailLog = {
         id: 'eml-' + Date.now(),
@@ -1101,14 +1427,14 @@ app.post('/api/email/test', async (req, res) => {
         timestamp: new Date().toISOString()
       };
       db.emailLogs = [log, ...(db.emailLogs || [])].slice(0, 100);
-      writeDb(db);
+      await writeDb(db);
     } catch (e) {}
     res.status(500).json({ error: 'Erro ao conectar no SMTP: ' + (err.message || err) });
   }
-});
+}));
 
 async function executeBackupRoutine(options?: { targetEmail?: string; isAutoTrigger?: boolean; customFormat?: string }) {
-  const db = readDb();
+  const db = await readDb();
   const settings = db.emailSettings;
 
   if (!settings || !settings.smtpUser || !settings.smtpPass) {
@@ -1193,7 +1519,7 @@ async function executeBackupRoutine(options?: { targetEmail?: string; isAutoTrig
     from: `"${settings.senderName || 'IPTV Pro Backup'}" <${settings.senderEmail || settings.smtpUser}>`,
     to: targetEmail,
     cc: settings.backupCcEmail || undefined,
-    subject: isAuto 
+    subject: isAuto
       ? `⏰ [Backup Automático] Banco de Dados IPTV/P2P - ${todayStr}`
       : `📦 [Backup Geral] Dados do Sistema IPTV/P2P - ${todayStr}`,
     html: `
@@ -1249,12 +1575,12 @@ async function executeBackupRoutine(options?: { targetEmail?: string; isAutoTrig
   };
   db.emailLogs = [log, ...(db.emailLogs || [])].slice(0, 100);
 
-  writeDb(db);
+  await writeDb(db);
 
   return { lastBackupSentAt: nowIso, nextBackupScheduledAt: db.emailSettings?.nextBackupScheduledAt };
 }
 
-app.post('/api/email/send-backup', async (req, res) => {
+app.post('/api/email/send-backup', ah(async (req, res) => {
   try {
     const result = await executeBackupRoutine({
       targetEmail: req.body.targetEmail,
@@ -1266,7 +1592,7 @@ app.post('/api/email/send-backup', async (req, res) => {
   } catch (err: any) {
     console.error('Send Backup Email Error:', err);
     try {
-      const db = readDb();
+      const db = await readDb();
       const targetEmail = req.body?.targetEmail || db.emailSettings?.backupRecipientEmail || db.emailSettings?.smtpUser || 'Desconhecido';
       const log: EmailLog = {
         id: 'eml-' + Date.now(),
@@ -1278,13 +1604,13 @@ app.post('/api/email/send-backup', async (req, res) => {
         timestamp: new Date().toISOString()
       };
       db.emailLogs = [log, ...(db.emailLogs || [])].slice(0, 100);
-      writeDb(db);
+      await writeDb(db);
     } catch (e) {}
     res.status(500).json({ error: 'Erro ao enviar backup por e-mail: ' + (err.message || err) });
   }
-});
+}));
 
-app.post('/api/email/trigger-auto-backup', async (req, res) => {
+app.post('/api/email/trigger-auto-backup', ah(async (req, res) => {
   try {
     const result = await executeBackupRoutine({
       isAutoTrigger: true
@@ -1295,11 +1621,11 @@ app.post('/api/email/trigger-auto-backup', async (req, res) => {
     console.error('Trigger Auto Backup Error:', err);
     res.status(500).json({ error: 'Erro ao executar teste de backup automático: ' + (err.message || err) });
   }
-});
+}));
 
-app.post('/api/email/send-marketing', async (req, res) => {
+app.post('/api/email/send-marketing', ah(async (req, res) => {
   try {
-    const db = readDb();
+    const db = await readDb();
     const settings = db.emailSettings;
 
     if (!settings || !settings.smtpUser || !settings.smtpPass) {
@@ -1386,13 +1712,13 @@ app.post('/api/email/send-marketing', async (req, res) => {
       timestamp: new Date().toISOString()
     };
     db.emailLogs = [log, ...(db.emailLogs || [])].slice(0, 100);
-    writeDb(db);
+    await writeDb(db);
 
     res.json({ success: true, sentCount, failedCount });
   } catch (err: any) {
     console.error('Send Marketing Email Error:', err);
     try {
-      const db = readDb();
+      const db = await readDb();
       const log: EmailLog = {
         id: 'eml-' + Date.now(),
         recipient: `Filtro ${req.body?.targetFilter || 'Geral'}`,
@@ -1402,32 +1728,31 @@ app.post('/api/email/send-marketing', async (req, res) => {
         timestamp: new Date().toISOString()
       };
       db.emailLogs = [log, ...(db.emailLogs || [])].slice(0, 100);
-      writeDb(db);
+      await writeDb(db);
     } catch (e) {}
     res.status(500).json({ error: 'Erro no disparo de e-mails: ' + (err.message || err) });
   }
-});
+}));
 
-app.post('/api/email/logs/clear', (req, res) => {
-  const db = readDb();
+app.post('/api/email/logs/clear', ah(async (req, res) => {
+  const db = await readDb();
   db.emailLogs = [];
-  writeDb(db);
+  await writeDb(db);
   res.json({ success: true, logs: [] });
-});
+}));
 
 // MESSAGE TEMPLATES ENDPOINTS
-app.get('/api/templates', (req, res) => {
-  const db = readDb();
+app.get('/api/templates', ah(async (req, res) => {
+  const db = await readDb();
   if (!db.messageTemplates || db.messageTemplates.length === 0) {
-    const initial = getInitialData();
-    db.messageTemplates = initial.messageTemplates;
-    writeDb(db);
+    db.messageTemplates = DEFAULT_MESSAGE_TEMPLATES;
+    await writeDb(db);
   }
   res.json({ templates: db.messageTemplates });
-});
+}));
 
-app.post('/api/templates', (req, res) => {
-  const db = readDb();
+app.post('/api/templates', ah(async (req, res) => {
+  const db = await readDb();
   const { id, title, category, content } = req.body;
 
   if (!title || !content) {
@@ -1467,25 +1792,25 @@ app.post('/api/templates', (req, res) => {
     db.messageTemplates.unshift(newTpl);
   }
 
-  writeDb(db);
+  await writeDb(db);
   res.json({ success: true, templates: db.messageTemplates });
-});
+}));
 
-app.delete('/api/templates/:id', (req, res) => {
-  const db = readDb();
+app.delete('/api/templates/:id', ah(async (req, res) => {
+  const db = await readDb();
   const { id } = req.params;
 
   if (db.messageTemplates) {
     db.messageTemplates = db.messageTemplates.filter(t => t.id !== id);
-    writeDb(db);
+    await writeDb(db);
   }
 
   res.json({ success: true, templates: db.messageTemplates || [] });
-});
+}));
 
 // DISPATCH TEMPLATE VIA BOT
-app.post('/api/bot/send-template', (req, res) => {
-  const db = readDb();
+app.post('/api/bot/send-template', ah(async (req, res) => {
+  const db = await readDb();
   const { clientId, templateContent, customPix } = req.body;
 
   if (!clientId || !templateContent) {
@@ -1512,9 +1837,13 @@ app.post('/api/bot/send-template', (req, res) => {
     .replace(/{pix}/g, pixKey)
     .replace(/{status}/g, client.status);
 
+  const result = await whatsapp.sendWhatsAppMessage(client.contact, renderedText);
+  const sendStatus: 'ENVIADO' | 'ERRO' = result.ok === true ? 'ENVIADO' : 'ERRO';
+  const sendError = result.ok === false ? result.error : undefined;
+
   // Update client bot status
   const nowIso = new Date().toISOString();
-  client.botStatus = 'ENVIADO';
+  client.botStatus = sendStatus;
   client.lastBotSentAt = nowIso;
   client.botAttempts = (client.botAttempts || 0) + 1;
 
@@ -1526,12 +1855,17 @@ app.post('/api/bot/send-template', (req, res) => {
     contact: client.contact,
     messageType: 'MANUAL',
     messageContent: renderedText,
-    status: 'ENVIADO',
+    status: sendStatus,
+    errorMessage: sendError,
     timestamp: nowIso
   };
 
   db.botLogs = [log, ...(db.botLogs || [])].slice(0, 100);
-  writeDb(db);
+  await writeDb(db);
+
+  if (sendError !== undefined) {
+    return res.status(502).json({ error: sendError, renderedText, log, client });
+  }
 
   res.json({
     success: true,
@@ -1539,21 +1873,20 @@ app.post('/api/bot/send-template', (req, res) => {
     log,
     client
   });
-});
+}));
 
 // MANAGED APPS ENDPOINTS
-app.get('/api/apps', (req, res) => {
-  const db = readDb();
+app.get('/api/apps', ah(async (req, res) => {
+  const db = await readDb();
   if (!db.appsList || db.appsList.length === 0) {
-    const initial = getInitialData();
-    db.appsList = initial.appsList;
-    writeDb(db);
+    db.appsList = DEFAULT_APPS_LIST;
+    await writeDb(db);
   }
   res.json({ apps: db.appsList });
-});
+}));
 
-app.post('/api/apps', (req, res) => {
-  const db = readDb();
+app.post('/api/apps', ah(async (req, res) => {
+  const db = await readDb();
   const { name, oldName, apps } = req.body;
 
   if (!db.appsList) {
@@ -1580,123 +1913,31 @@ app.post('/api/apps', (req, res) => {
     }
   }
 
-  writeDb(db);
+  await writeDb(db);
   res.json({ success: true, apps: db.appsList });
-});
+}));
 
-app.delete('/api/apps/:name', (req, res) => {
-  const db = readDb();
+app.delete('/api/apps/:name', ah(async (req, res) => {
+  const db = await readDb();
   const nameToDelete = decodeURIComponent(req.params.name);
 
   if (db.appsList) {
     db.appsList = db.appsList.filter(a => a.toLowerCase() !== nameToDelete.toLowerCase());
-    writeDb(db);
+    await writeDb(db);
   }
 
   res.json({ success: true, apps: db.appsList || [] });
-});
+}));
 
-// PRISMA SCHEMA & ARCHITECTURE DOCUMENTATION ENDPOINT
+// ARCHITECTURE DOCUMENTATION ENDPOINT — serves the actual prisma/schema.prisma in use
 app.get('/api/prisma-schema', (req, res) => {
-  const prismaSchema = `// Prisma Schema para MySQL - Sistema IPTV & P2P
-datasource db {
-  provider = "mysql"
-  url      = env("DATABASE_URL")
-}
-
-generator client {
-  provider = "prisma-client-js"
-}
-
-enum StatusCliente {
-  Ativo
-  Vencido
-  Hoje
-  A_Vencer
-  Inativo
-}
-
-enum TipoServico {
-  IPTV
-  P2P
-  IPTV_P2P
-}
-
-enum StatusBot {
-  PENDENTE
-  ENVIADO
-  ERRO
-  ISENTO
-}
-
-model Cliente {
-  id              String        @id @default(uuid())
-  quantidadeGeral Int           @default(1)
-  usuario         String
-  dataVencimento  DateTime
-  status          StatusCliente @default(Ativo)
-  valor           Decimal       @db.Decimal(10, 2)
-  campoExtra      String?
-  contato         String
-  aplicativoUsado String
-  tipoServico     TipoServico   @default(IPTV)
-  observacoes     String?       @db.Text
-  statusBot       StatusBot     @default(PENDENTE)
-  ultimoBotSentAt DateTime?
-  criadoEm        DateTime      @default(now())
-  atualizadoEm    DateTime      @updatedAt
-
-  botLogs         BotLog[]
-
-  @@map("clientes")
-}
-
-model Despesa {
-  id          String   @id @default(uuid())
-  mesRef      String   // Formato YYYY-MM
-  descricao   String
-  categoria   String
-  valor       Decimal  @db.Decimal(10, 2)
-  data        DateTime
-  observacoes String?
-  criadoEm    DateTime @default(now())
-
-  @@map("despesas")
-}
-
-model ConfigBot {
-  id                  Int      @id @default(1)
-  ativo               Boolean  @default(true)
-  intervaloMinutos    Int      @default(5)
-  enviarInativos      Boolean  @default(true)
-  enviarVencidos      Boolean  @default(true)
-  enviarAVencer       Boolean  @default(true)
-  diasAntecedencia    Int      @default(2)
-  templateInativo     String   @db.Text
-  templateVencido     String   @db.Text
-  templateAVencer     String   @db.Text
-  ultimaExecucao      DateTime?
-  proximaExecucao     DateTime?
-
-  @@map("config_bot")
-}
-
-model BotLog {
-  id           String   @id @default(uuid())
-  clienteId    String
-  cliente      Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
-  contato      String
-  tipoMensagem String
-  conteudo     String   @db.Text
-  status       String   // ENVIADO, ERRO
-  erroDetalhe  String?
-  dataEnvio    DateTime @default(now())
-
-  @@map("bot_logs")
-}
-`;
-
-  res.send(prismaSchema);
+  try {
+    const schemaPath = path.join(process.cwd(), 'prisma', 'schema.prisma');
+    const schema = fs.readFileSync(schemaPath, 'utf-8');
+    res.type('text/plain').send(schema);
+  } catch (err) {
+    res.status(500).json({ error: 'Não foi possível ler prisma/schema.prisma' });
+  }
 });
 
 async function startServer() {
@@ -1718,6 +1959,8 @@ async function startServer() {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`>>> Express IPTV/P2P Server running on http://0.0.0.0:${PORT}`);
   });
+
+  whatsapp.initWhatsApp().catch(err => console.error('[WhatsApp] Erro na inicialização:', err));
 }
 
 startServer();

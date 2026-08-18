@@ -1,0 +1,140 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  username     String   @unique
+  passwordHash String   @map("password_hash")
+  name         String
+  role         String   @default("ADMIN")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+model Client {
+  id            String    @id @default(uuid())
+  generalQty    Int?      @map("general_qty")
+  username      String
+  dueDate       DateTime  @map("due_date")
+  status        String
+  value         Decimal   @db.Decimal(10, 2)
+  extraField    String?   @map("extra_field")
+  contact       String
+  appUsed       String    @map("app_used")
+  serviceType   String    @map("service_type")
+  notes         String?   @db.Text
+  botStatus     String?   @map("bot_status")
+  lastBotSentAt DateTime? @map("last_bot_sent_at")
+  botAttempts   Int?      @map("bot_attempts")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  botLogs BotLog[]
+
+  @@map("clients")
+}
+
+model Expense {
+  id          String   @id @default(uuid())
+  monthRef    String   @map("month_ref")
+  description String
+  category    String
+  value       Decimal  @db.Decimal(10, 2)
+  date        DateTime
+  notes       String?  @db.Text
+  isRecurring Boolean  @default(false) @map("is_recurring")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("expenses")
+}
+
+model BotConfig {
+  id                  Int       @id @default(1)
+  enabled             Boolean   @default(true)
+  intervalMinutes     Int       @default(5) @map("interval_minutes")
+  targetInactive      Boolean   @default(true) @map("target_inactive")
+  targetOverdue       Boolean   @default(true) @map("target_overdue")
+  targetUpcoming      Boolean   @default(true) @map("target_upcoming")
+  daysBeforeDueNotice Int       @default(2) @map("days_before_due_notice")
+  templateInactive    String    @db.Text @map("template_inactive")
+  templateOverdue     String    @db.Text @map("template_overdue")
+  templateUpcoming    String    @db.Text @map("template_upcoming")
+  lastRunTimestamp    DateTime? @map("last_run_timestamp")
+  nextRunTimestamp    DateTime? @map("next_run_timestamp")
+
+  @@map("bot_config")
+}
+
+model BotLog {
+  id             String   @id @default(uuid())
+  clientId       String?  @map("client_id")
+  clientUsername String   @map("client_username")
+  contact        String
+  messageType    String   @map("message_type")
+  messageContent String   @db.Text @map("message_content")
+  status         String
+  errorMessage   String?  @db.Text @map("error_message")
+  timestamp      DateTime @default(now())
+
+  client Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  @@map("bot_logs")
+}
+
+model EmailSettings {
+  id                    Int       @id @default(1)
+  smtpHost              String    @map("smtp_host")
+  smtpPort              Int       @map("smtp_port")
+  secure                Boolean   @default(false)
+  smtpUser              String?   @map("smtp_user")
+  smtpPass              String?   @map("smtp_pass")
+  senderName            String    @map("sender_name")
+  senderEmail           String?   @map("sender_email")
+  backupRecipientEmail  String?   @map("backup_recipient_email")
+  backupCcEmail         String?   @map("backup_cc_email")
+  autoBackupSchedule    String    @default("DISABLED") @map("auto_backup_schedule")
+  backupTime            String?   @map("backup_time")
+  backupFormat          String?   @map("backup_format")
+  lastBackupSentAt      DateTime? @map("last_backup_sent_at")
+  nextBackupScheduledAt DateTime? @map("next_backup_scheduled_at")
+
+  @@map("email_settings")
+}
+
+model EmailLog {
+  id           String   @id @default(uuid())
+  recipient    String
+  subject      String
+  type         String
+  status       String
+  errorMessage String?  @db.Text @map("error_message")
+  timestamp    DateTime @default(now())
+
+  @@map("email_logs")
+}
+
+model MessageTemplate {
+  id              String   @id
+  title           String
+  category        String
+  content         String   @db.Text
+  isSystemDefault Boolean  @default(false) @map("is_system_default")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@map("message_templates")
+}
+
+model AppOption {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+
+  @@map("apps_list")
+}

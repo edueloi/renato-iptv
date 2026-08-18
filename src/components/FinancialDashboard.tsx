@@ -4,6 +4,7 @@ import {
   ArrowDownRight, Layers, FileSpreadsheet, PieChart, AlertCircle, Sparkles, FileText, Clock
 } from 'lucide-react';
 import { CycleReport, Client } from '../types';
+import { apiFetch } from '../utils/api';
 import { FinancialLedgerGrid } from './FinancialLedgerGrid';
 import { CalendarAgenda } from './CalendarAgenda';
 
@@ -31,7 +32,7 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
   const fetchFinancialData = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/financials?month=${selectedMonth}`);
+      const res = await apiFetch(`/api/financials?month=${selectedMonth}`);
       if (res.ok) {
         const json = await res.json();
         setData(json);
@@ -45,7 +46,7 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
 
   const handleRenewSingleClient = async (clientId: string) => {
     try {
-      const res = await fetch('/api/clients/batch-renew', {
+      const res = await apiFetch('/api/clients/batch-renew', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clientIds: [clientId], addDaysCount: 30 })

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { apiFetch } from '../utils/api';
 import { Tv, Plus, Edit2, Trash2, Check, X, Settings, ChevronDown, Search } from 'lucide-react';
 import { ConfirmModal } from './ConfirmModal';
 
@@ -58,7 +59,7 @@ export const AppDropdown: React.FC<AppDropdownProps> = ({
 
   const fetchApps = async () => {
     try {
-      const res = await fetch('/api/apps');
+      const res = await apiFetch('/api/apps');
       if (res.ok) {
         const json = await res.json();
         if (json.apps && Array.isArray(json.apps) && json.apps.length > 0) {
@@ -74,7 +75,7 @@ export const AppDropdown: React.FC<AppDropdownProps> = ({
     if (!newAppName.trim()) return;
     setSaving(true);
     try {
-      const res = await fetch('/api/apps', {
+      const res = await apiFetch('/api/apps', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newAppName.trim() })
@@ -96,7 +97,7 @@ export const AppDropdown: React.FC<AppDropdownProps> = ({
     if (!editingValue.trim()) return;
     setSaving(true);
     try {
-      const res = await fetch('/api/apps', {
+      const res = await apiFetch('/api/apps', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: editingValue.trim(), oldName })
@@ -122,7 +123,7 @@ export const AppDropdown: React.FC<AppDropdownProps> = ({
     const appName = deleteConfirmApp;
     setSaving(true);
     try {
-      const res = await fetch(`/api/apps/${encodeURIComponent(appName)}`, {
+      const res = await apiFetch(`/api/apps/${encodeURIComponent(appName)}`, {
         method: 'DELETE'
       });
       if (res.ok) {

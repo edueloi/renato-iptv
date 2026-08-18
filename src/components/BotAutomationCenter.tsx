@@ -6,6 +6,8 @@ import {
 import { BotConfig, BotLog } from '../types';
 import { formatDateTimeBR, formatPhoneBR } from '../utils/masks';
 import { ConfirmModal } from './ConfirmModal';
+import { apiFetch } from '../utils/api';
+import { WhatsAppConnectionCard } from './WhatsAppConnectionCard';
 
 export const BotAutomationCenter: React.FC = () => {
   const [config, setConfig] = useState<BotConfig | null>(null);
@@ -32,8 +34,8 @@ export const BotAutomationCenter: React.FC = () => {
     setLoading(true);
     try {
       const [resConf, resLogs] = await Promise.all([
-        fetch('/api/bot/config'),
-        fetch('/api/bot/logs')
+        apiFetch('/api/bot/config'),
+        apiFetch('/api/bot/logs')
       ]);
 
       if (resConf.ok) {
@@ -55,7 +57,7 @@ export const BotAutomationCenter: React.FC = () => {
     if (!config) return;
     try {
       const updated = { ...config, enabled: !config.enabled };
-      const res = await fetch('/api/bot/config', {
+      const res = await apiFetch('/api/bot/config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updated)
@@ -73,7 +75,7 @@ export const BotAutomationCenter: React.FC = () => {
     if (!config) return;
 
     try {
-      const res = await fetch('/api/bot/config', {
+      const res = await apiFetch('/api/bot/config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config)
@@ -90,7 +92,7 @@ export const BotAutomationCenter: React.FC = () => {
   const handleTriggerNow = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/bot/trigger', { method: 'POST' });
+      const res = await apiFetch('/api/bot/trigger', { method: 'POST' });
       if (res.ok) {
         setSecondsToNextRun(300);
         fetchBotData();
@@ -106,7 +108,7 @@ export const BotAutomationCenter: React.FC = () => {
 
   const executeClearLogs = async () => {
     try {
-      const res = await fetch('/api/bot/logs', { method: 'DELETE' });
+      const res = await apiFetch('/api/bot/logs', { method: 'DELETE' });
       if (res.ok) {
         fetchBotData();
       }
@@ -129,6 +131,8 @@ export const BotAutomationCenter: React.FC = () => {
 
   return (
     <div className="space-y-4 text-xs sm:text-sm">
+      <WhatsAppConnectionCard />
+
       {/* Bot Control Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-3.5 rounded-lg border border-slate-200 dark:border-slate-800 shadow-xs">
         <div className="flex items-center gap-2.5">

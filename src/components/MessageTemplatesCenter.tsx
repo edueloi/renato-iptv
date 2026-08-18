@@ -7,6 +7,7 @@ import {
 import { Client, MessageTemplate } from '../types';
 import { formatPhoneBR, getFirstName } from '../utils/masks';
 import { ConfirmModal } from './ConfirmModal';
+import { apiFetch } from '../utils/api';
 
 interface MessageTemplatesCenterProps {
   clients?: Client[];
@@ -56,7 +57,7 @@ export const MessageTemplatesCenter: React.FC<MessageTemplatesCenterProps> = ({
   const fetchTemplates = async () => {
     setLoadingTemplates(true);
     try {
-      const res = await fetch('/api/templates');
+      const res = await apiFetch('/api/templates');
       if (res.ok) {
         const json = await res.json();
         setTemplates(json.templates || []);
@@ -81,7 +82,7 @@ export const MessageTemplatesCenter: React.FC<MessageTemplatesCenterProps> = ({
     setSavingTemplate(true);
     setStatusMsg(null);
     try {
-      const res = await fetch('/api/templates', {
+      const res = await apiFetch('/api/templates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editingTemplate)
@@ -106,7 +107,7 @@ export const MessageTemplatesCenter: React.FC<MessageTemplatesCenterProps> = ({
     if (!deleteTemplateId) return;
 
     try {
-      const res = await fetch(`/api/templates/${deleteTemplateId}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/templates/${deleteTemplateId}`, { method: 'DELETE' });
       if (res.ok) {
         const json = await res.json();
         setTemplates(json.templates || []);
@@ -175,7 +176,7 @@ export const MessageTemplatesCenter: React.FC<MessageTemplatesCenterProps> = ({
     setSendingBot(true);
     setStatusMsg(null);
     try {
-      const res = await fetch('/api/bot/send-template', {
+      const res = await apiFetch('/api/bot/send-template', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

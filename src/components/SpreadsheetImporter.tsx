@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { apiFetch } from '../utils/api';
 import { 
   FileSpreadsheet, Upload, CheckCircle2, AlertCircle, ArrowRight, RefreshCw, 
   Clipboard, Trash2, Edit2, Plus, Search, HelpCircle, Check, Sparkles, Filter
@@ -93,7 +94,7 @@ export const SpreadsheetImporter: React.FC<SpreadsheetImporterProps> = ({
 
   const sendParseReq = async (payload: any) => {
     try {
-      const res = await fetch('/api/import/parse', {
+      const res = await apiFetch('/api/import/parse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -153,7 +154,7 @@ export const SpreadsheetImporter: React.FC<SpreadsheetImporterProps> = ({
     setStatusMsg(null);
 
     try {
-      const res = await fetch('/api/import/confirm', {
+      const res = await apiFetch('/api/import/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -1,0 +1,19 @@
+{
+  "name": "IPTV & P2P Pro",
+  "short_name": "IPTV Pro",
+  "description": "Painel do revendedor - gestão financeira e automação de IPTV/P2P",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0f172a",
+  "theme_color": "#4f46e5",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

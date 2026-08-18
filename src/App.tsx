@@ -4,6 +4,7 @@ import {
   Tv, Sun, Moon, Menu, X, ShieldCheck, CheckCircle2, LogOut, User as UserIcon, Mail, MessageSquare
 } from 'lucide-react';
 import { Client, ClientStatus } from './types';
+import { apiFetch, clearSession } from './utils/api';
 import { ClientManagement } from './components/ClientManagement';
 import { FinancialDashboard } from './components/FinancialDashboard';
 import { ExpenseTracker } from './components/ExpenseTracker';
@@ -41,7 +42,7 @@ export default function App() {
   });
 
   const handleLogout = () => {
-    localStorage.removeItem('iptv_pro_auth');
+    clearSession();
     setCurrentUser(null);
     setMobileMenuOpen(false);
   };
@@ -91,7 +92,7 @@ export default function App() {
   const fetchClients = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/clients');
+      const res = await apiFetch('/api/clients');
       if (res.ok) {
         const json = await res.json();
         setClients(json);
@@ -107,7 +108,7 @@ export default function App() {
     try {
       if (data.id) {
         // Edit
-        const res = await fetch(`/api/clients/${data.id}`, {
+        const res = await apiFetch(`/api/clients/${data.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data)
@@ -118,7 +119,7 @@ export default function App() {
         }
       } else {
         // Create
-        const res = await fetch('/api/clients', {
+        const res = await apiFetch('/api/clients', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data)
@@ -136,7 +137,7 @@ export default function App() {
   const handleDeleteClient = async (id: string) => {
     if (!confirm('Tem certeza que deseja excluir este cliente?')) return;
     try {
-      const res = await fetch(`/api/clients/${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/clients/${id}`, { method: 'DELETE' });
       if (res.ok) {
         showToast('Cliente removido.');
         fetchClients();
@@ -148,7 +149,7 @@ export default function App() {
 
   const handleRenewBatch = async (clientIds: string[]) => {
     try {
-      const res = await fetch('/api/clients/batch-renew', {
+      const res = await apiFetch('/api/clients/batch-renew', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clientIds, addDaysCount: 30 })
