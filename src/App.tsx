@@ -76,8 +76,10 @@ export default function App() {
   };
 
   useEffect(() => {
-    fetchClients();
-  }, []);
+    if (currentUser) {
+      fetchClients();
+    }
+  }, [currentUser]);
 
   useEffect(() => {
     if (darkMode) {

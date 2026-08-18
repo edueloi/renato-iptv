@@ -37,7 +37,10 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
 
   const res = await fetch(url, { ...options, headers });
 
-  if (res.status === 401) {
+  // Only force a reload if we actually had a session that got rejected —
+  // otherwise an unauthenticated call (e.g. on the login screen, with no
+  // token yet) would 401 and reload in an infinite loop.
+  if (res.status === 401 && token) {
     clearSession();
     window.location.reload();
   }
