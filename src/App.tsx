@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Users, TrendingUp, TrendingDown, FileSpreadsheet, Bot, Database, 
+  Users, TrendingUp, TrendingDown, FileSpreadsheet, Bot,
   Tv, Sun, Moon, Menu, X, ShieldCheck, CheckCircle2, LogOut, User as UserIcon, Mail, MessageSquare
 } from 'lucide-react';
 import { Client, ClientStatus } from './types';
@@ -12,7 +12,6 @@ import { SpreadsheetImporter } from './components/SpreadsheetImporter';
 import { BotAutomationCenter } from './components/BotAutomationCenter';
 import { MessageTemplatesCenter } from './components/MessageTemplatesCenter';
 import { EmailMarketingCenter } from './components/EmailMarketingCenter';
-import { ArchitectureDocs } from './components/ArchitectureDocs';
 import { ClientModal } from './components/ClientModal';
 import { LoginScreen, UserAuth } from './components/LoginScreen';
 import { MobileNavigation, TabType } from './components/MobileNavigation';
@@ -340,17 +339,6 @@ export default function App() {
             >
               <Mail className="w-3.5 h-3.5 text-indigo-500" /> E-mail & Backups
             </button>
-
-            <button
-              onClick={() => setActiveTab('docs')}
-              className={`py-2 px-3 text-xs font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
-                activeTab === 'docs'
-                  ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 font-semibold'
-                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-              }`}
-            >
-              <Database className="w-3.5 h-3.5" /> Arquitetura & Prisma
-            </button>
           </div>
         </div>
       </header>
@@ -416,10 +404,6 @@ export default function App() {
 
         {activeTab === 'email' && (
           <EmailMarketingCenter />
-        )}
-
-        {activeTab === 'docs' && (
-          <ArchitectureDocs />
         )}
       </main>
 

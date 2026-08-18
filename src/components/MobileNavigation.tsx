@@ -1,11 +1,11 @@
 import React from 'react';
-import { 
-  Users, TrendingUp, TrendingDown, FileSpreadsheet, Bot, Database, 
+import {
+  Users, TrendingUp, TrendingDown, FileSpreadsheet, Bot,
   Sun, Moon, X, LogOut, ShieldCheck, ChevronRight, Tv, CheckCircle2, AlertCircle, Mail, MessageSquare
 } from 'lucide-react';
 import { UserAuth } from './LoginScreen';
 
-export type TabType = 'clients' | 'financials' | 'expenses' | 'import' | 'bot' | 'templates' | 'email' | 'docs';
+export type TabType = 'clients' | 'financials' | 'expenses' | 'import' | 'bot' | 'templates' | 'email';
 
 interface MobileNavigationProps {
   activeTab: TabType;
@@ -93,14 +93,6 @@ export function MobileNavigation({
       label: 'Importar Planilha Excel/CSV',
       shortLabel: 'Importar',
       icon: FileSpreadsheet,
-      badge: null,
-      badgeColor: '',
-    },
-    {
-      id: 'docs' as TabType,
-      label: 'Arquitetura & Diagrama Prisma',
-      shortLabel: 'Docs',
-      icon: Database,
       badge: null,
       badgeColor: '',
     },

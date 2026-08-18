@@ -1,7 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
 import path from 'path';
-import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import * as XLSX from 'xlsx';
 import nodemailer from 'nodemailer';
@@ -1928,17 +1927,6 @@ app.delete('/api/apps/:name', ah(async (req, res) => {
 
   res.json({ success: true, apps: db.appsList || [] });
 }));
-
-// ARCHITECTURE DOCUMENTATION ENDPOINT — serves the actual prisma/schema.prisma in use
-app.get('/api/prisma-schema', (req, res) => {
-  try {
-    const schemaPath = path.join(process.cwd(), 'prisma', 'schema.prisma');
-    const schema = fs.readFileSync(schemaPath, 'utf-8');
-    res.type('text/plain').send(schema);
-  } catch (err) {
-    res.status(500).json({ error: 'Não foi possível ler prisma/schema.prisma' });
-  }
-});
 
 async function startServer() {
   // Initialize Vite in dev mode
