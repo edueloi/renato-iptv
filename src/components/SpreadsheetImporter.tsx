@@ -33,6 +33,7 @@ export const SpreadsheetImporter: React.FC<SpreadsheetImporterProps> = ({
   onImportSuccess
 }) => {
   const [importMode, setImportMode] = useState<'FILE' | 'PASTE'>('FILE');
+  const [importServiceType, setImportServiceType] = useState<'AUTO' | 'IPTV' | 'P2P'>('AUTO');
   const [file, setFile] = useState<File | null>(null);
   const [pastedText, setPastedText] = useState<string>('');
   const [parsing, setParsing] = useState(false);
@@ -78,12 +79,12 @@ export const SpreadsheetImporter: React.FC<SpreadsheetImporterProps> = ({
         const reader = new FileReader();
         reader.onload = async (e) => {
           const base64 = e.target?.result as string;
-          payload = { fileBase64: base64 };
+          payload = { fileBase64: base64, serviceType: importServiceType };
           await sendParseReq(payload);
         };
         reader.readAsDataURL(file);
       } else {
-        payload = { pastedText };
+        payload = { pastedText, serviceType: importServiceType };
         await sendParseReq(payload);
       }
     } catch (err: any) {
@@ -236,6 +237,48 @@ export const SpreadsheetImporter: React.FC<SpreadsheetImporterProps> = ({
             >
               <Clipboard className="w-3.5 h-3.5" />
               <span>Copiar e Colar</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Service Type Selector: forces IPTV or P2P for every row in this import */}
+        <div className="p-3 bg-indigo-50/60 dark:bg-indigo-950/30 rounded-xl border border-indigo-200/80 dark:border-indigo-800/60 flex flex-col sm:flex-row sm:items-center gap-2 sm:justify-between">
+          <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+            Esta planilha é de qual serviço?
+          </span>
+          <div className="flex items-center gap-1 bg-white dark:bg-slate-900 p-1 rounded-lg border border-slate-200 dark:border-slate-700/80">
+            <button
+              type="button"
+              onClick={() => setImportServiceType('AUTO')}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                importServiceType === 'AUTO'
+                  ? 'bg-indigo-600 text-white'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100'
+              }`}
+            >
+              Detectar automaticamente
+            </button>
+            <button
+              type="button"
+              onClick={() => setImportServiceType('IPTV')}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                importServiceType === 'IPTV'
+                  ? 'bg-indigo-600 text-white'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100'
+              }`}
+            >
+              IPTV
+            </button>
+            <button
+              type="button"
+              onClick={() => setImportServiceType('P2P')}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                importServiceType === 'P2P'
+                  ? 'bg-indigo-600 text-white'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100'
+              }`}
+            >
+              P2P
             </button>
           </div>
         </div>
@@ -461,6 +504,8 @@ export const SpreadsheetImporter: React.FC<SpreadsheetImporterProps> = ({
                         <option value="Hoje">Hoje</option>
                         <option value="A Vencer">A Vencer</option>
                         <option value="Vencido">Vencido</option>
+                        <option value="Pendente Pagamento">Pendente Pagamento</option>
+                        <option value="Ativo Parceiro">Ativo Parceiro</option>
                         <option value="Bloqueado">Bloqueado</option>
                         <option value="Inativo">Inativo</option>
                       </select>
@@ -577,6 +622,8 @@ export const SpreadsheetImporter: React.FC<SpreadsheetImporterProps> = ({
                       <option value="Hoje">Hoje</option>
                       <option value="A Vencer">A Vencer</option>
                       <option value="Vencido">Vencido</option>
+                      <option value="Pendente Pagamento">Pendente Pagamento</option>
+                      <option value="Ativo Parceiro">Ativo Parceiro</option>
                       <option value="Bloqueado">Bloqueado</option>
                       <option value="Inativo">Inativo</option>
                     </select>

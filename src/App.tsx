@@ -166,11 +166,11 @@ export default function App() {
   };
 
   // Metrics summary for top bar
-  const activeCount = clients.filter(c => c.status === 'Ativo' || c.status === 'Hoje' || c.status === 'A Vencer').length;
+  const activeCount = clients.filter(c => c.status === 'Ativo' || c.status === 'Hoje' || c.status === 'A Vencer' || c.status === 'Pendente Pagamento' || c.status === 'Ativo Parceiro').length;
   const overdueCount = clients.filter(c => c.status === 'Vencido').length;
   const inactiveCount = clients.filter(c => c.status === 'Inativo').length;
   const totalRevenue = clients
-    .filter(c => c.status === 'Ativo' || c.status === 'Hoje' || c.status === 'A Vencer')
+    .filter(c => c.status === 'Ativo' || c.status === 'Hoje' || c.status === 'A Vencer' || c.status === 'Pendente Pagamento' || c.status === 'Ativo Parceiro')
     .reduce((sum, c) => sum + (c.value || 0), 0);
 
   const formatBrl = (val: number) => {

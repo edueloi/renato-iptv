@@ -488,7 +488,7 @@ function updateClientStatuses(clients: Client[]): Client[] {
     let newStatus: ClientStatus = client.status;
 
     // Preserve manual statuses if set explicitly
-    if (client.status === 'Bloqueado' || client.status === 'Inativo' || client.status === 'Em Teste') {
+    if (client.status === 'Bloqueado' || client.status === 'Inativo' || client.status === 'Em Teste' || client.status === 'Pendente Pagamento' || client.status === 'Ativo Parceiro') {
       return client;
     }
 
@@ -741,10 +741,13 @@ app.post('/api/clients/batch-renew', ah(async (req, res) => {
 
 // SPREADSHEET IMPORT API (Columns A to H mapping + Direct Excel Text Paste)
 app.post('/api/import/parse', (req, res) => {
-  const { fileBase64, pastedText } = req.body;
+  const { fileBase64, pastedText, serviceType: forcedServiceType } = req.body;
   if (!fileBase64 && !pastedText) {
     return res.status(400).json({ error: 'Nenhum arquivo ou texto colado foi enviado.' });
   }
+  // Quando o usuário escolhe explicitamente "IPTV" ou "P2P" no importador, essa planilha inteira
+  // é tratada como daquele serviço, em vez de tentar adivinhar pelo texto da coluna do aplicativo.
+  const useForcedServiceType = forcedServiceType === 'IPTV' || forcedServiceType === 'P2P';
 
   try {
     let rows: any[][] = [];
@@ -756,7 +759,9 @@ app.post('/api/import/parse', (req, res) => {
       const worksheet = workbook.Sheets[firstSheetName];
       rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
     } else if (pastedText) {
-      const lines = (pastedText as string).split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      // Não usar .trim() na linha inteira: colunas vazias no início (ex: Coluna A em branco,
+      // indicando cliente inativo) viram um "\t" à esquerda, e trim() apagaria essa marcação.
+      const lines = (pastedText as string).split(/\r?\n/).filter(l => l.trim().length > 0);
       rows = lines.map(line => {
         if (line.includes('\t')) return line.split('\t');
         if (line.includes(';')) return line.split(';');
@@ -783,10 +788,16 @@ app.post('/api/import/parse', (req, res) => {
       const colB = String(row[1] || row[0] || '').trim();
       if (!colB) continue; // Skip empty row
 
-      let generalQty = Number(row[0]) || (i + 1);
+      // Coluna A é o indicador de ativo/inativo: só tem número (1) quando o cliente está ativo.
+      // Linha em vermelho na planilha original = coluna A vazia = cliente inativo, mesmo que a
+      // coluna de status (D) esteja preenchida com outra coisa.
+      const colARaw = row[0];
+      const hasQty = colARaw !== undefined && colARaw !== null && String(colARaw).trim() !== '' && !isNaN(Number(colARaw)) && Number(colARaw) > 0;
+
+      let generalQty: number | undefined = hasQty ? Number(colARaw) : undefined;
       let username = String(row[1] || '').trim();
       let rawDate = row[2];
-      let statusRaw = String(row[3] || 'Ativo').trim();
+      let statusRaw = hasQty ? String(row[3] || 'Ativo').trim() : 'Inativo';
       let valueRaw = row[4];
       let extraField = String(row[5] || '').trim();
       let contact = cleanPhoneForImport(row[6]);
@@ -801,7 +812,7 @@ app.post('/api/import/parse', (req, res) => {
         extraField = String(row[4] || '').trim();
         contact = cleanPhoneForImport(row[5]);
         appUsed = String(row[6] || 'XCIPTV').trim();
-        generalQty = i + 1;
+        generalQty = undefined;
       }
 
       let formattedDueDate = new Date().toISOString().split('T')[0];
@@ -827,16 +838,19 @@ app.post('/api/import/parse', (req, res) => {
         }
       }
 
-      let val = 35.00;
+      // Célula de valor vazia na planilha = valor 0, nunca um número inventado.
+      let val = 0;
       if (typeof valueRaw === 'number') {
-        val = isNaN(valueRaw) ? 35.00 : valueRaw;
+        val = isNaN(valueRaw) ? 0 : valueRaw;
       } else if (typeof valueRaw === 'string') {
         const cleanVal = valueRaw.replace(/[R$\s]/gi, '').trim();
-        if (cleanVal.includes(',')) {
-          const norm = cleanVal.replace(/\./g, '').replace(',', '.');
-          val = parseFloat(norm) || 35.00;
-        } else {
-          val = parseFloat(cleanVal) || 35.00;
+        if (cleanVal) {
+          if (cleanVal.includes(',')) {
+            const norm = cleanVal.replace(/\./g, '').replace(',', '.');
+            val = parseFloat(norm) || 0;
+          } else {
+            val = parseFloat(cleanVal) || 0;
+          }
         }
       }
 
@@ -850,7 +864,7 @@ app.post('/api/import/parse', (req, res) => {
         extraField,
         contact,
         appUsed,
-        serviceType: appUsed.toUpperCase().includes('P2P') ? 'P2P' : 'IPTV'
+        serviceType: useForcedServiceType ? forcedServiceType : (appUsed.toUpperCase().includes('P2P') ? 'P2P' : 'IPTV')
       });
     }
 
@@ -1041,7 +1055,7 @@ app.get('/api/financials', ah(async (req, res) => {
   const currentCycleLabel = `${formatBrDate(currentCycleStart)} a ${formatBrDate(currentCycleEnd)}`;
 
   // Filter clients active/paid in current cycle:
-  const activeClients = clients.filter(c => c.status === 'Ativo' || c.status === 'Hoje' || c.status === 'A Vencer');
+  const activeClients = clients.filter(c => c.status === 'Ativo' || c.status === 'Hoje' || c.status === 'A Vencer' || c.status === 'Pendente Pagamento' || c.status === 'Ativo Parceiro');
   const inactiveClients = clients.filter(c => c.status === 'Inativo' || c.status === 'Vencido');
 
   const totalRevenue = activeClients.reduce((acc, c) => acc + (c.value || 0), 0);
@@ -1506,7 +1520,7 @@ async function executeBackupRoutine(options?: { targetEmail?: string; isAutoTrig
     });
   }
 
-  const activeCount = db.clients.filter(c => c.status === 'Ativo').length;
+  const activeCount = db.clients.filter(c => c.status === 'Ativo' || c.status === 'Pendente Pagamento' || c.status === 'Ativo Parceiro').length;
   const overdueCount = db.clients.filter(c => c.status === 'Vencido' || c.status === 'Hoje').length;
   const totalClients = db.clients.length;
   const totalRevenue = db.clients.filter(c => c.status !== 'Inativo').reduce((a, b) => a + (b.value || 0), 0);
@@ -1641,7 +1655,7 @@ app.post('/api/email/send-marketing', ah(async (req, res) => {
     if (targetFilter === 'VENCIDO') {
       targetClients = db.clients.filter(c => c.status === 'Vencido' || c.status === 'Hoje');
     } else if (targetFilter === 'ATIVO') {
-      targetClients = db.clients.filter(c => c.status === 'Ativo');
+      targetClients = db.clients.filter(c => c.status === 'Ativo' || c.status === 'Pendente Pagamento' || c.status === 'Ativo Parceiro');
     } else if (targetFilter === 'INATIVO') {
       targetClients = db.clients.filter(c => c.status === 'Inativo' || c.status === 'Bloqueado');
     } else {

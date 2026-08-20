@@ -190,7 +190,7 @@ export function CalendarAgenda({ clients, onRenewClient, onRefreshData }: Calend
               // Status metrics for badges
               const todayCount = dayClients.filter(c => c.status === 'Hoje').length;
               const overdueCount = dayClients.filter(c => c.status === 'Vencido').length;
-              const activeCount = dayClients.filter(c => c.status === 'Ativo' || c.status === 'A Vencer').length;
+              const activeCount = dayClients.filter(c => c.status === 'Ativo' || c.status === 'A Vencer' || c.status === 'Pendente Pagamento' || c.status === 'Ativo Parceiro').length;
 
               return (
                 <button

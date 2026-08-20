@@ -1,4 +1,4 @@
-export type ClientStatus = 'Ativo' | 'Vencido' | 'Hoje' | 'A Vencer' | 'Inativo' | 'Bloqueado' | 'Em Teste';
+export type ClientStatus = 'Ativo' | 'Vencido' | 'Hoje' | 'A Vencer' | 'Inativo' | 'Bloqueado' | 'Em Teste' | 'Pendente Pagamento' | 'Ativo Parceiro';
 
 export type ServiceType = 'IPTV' | 'P2P' | 'IPTV_P2P';
 

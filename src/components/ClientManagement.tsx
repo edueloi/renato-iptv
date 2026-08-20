@@ -369,6 +369,18 @@ export const ClientManagement: React.FC<ClientManagementProps> = ({
             <Sparkles className="w-3 h-3" /> Em Teste
           </span>
         );
+      case 'Pendente Pagamento':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold rounded-full bg-orange-50 text-orange-700 dark:bg-orange-950/50 dark:text-orange-400 border border-orange-200 dark:border-orange-800">
+            <DollarSign className="w-3 h-3" /> Pendente Pagamento
+          </span>
+        );
+      case 'Ativo Parceiro':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold rounded-full bg-teal-50 text-teal-700 dark:bg-teal-950/50 dark:text-teal-400 border border-teal-200 dark:border-teal-800">
+            <UserCheck className="w-3 h-3" /> Ativo Parceiro
+          </span>
+        );
       case 'Inativo':
       default:
         return (
@@ -466,6 +478,8 @@ export const ClientManagement: React.FC<ClientManagementProps> = ({
             <option value="Hoje">Vence Hoje</option>
             <option value="A Vencer">A Vencer</option>
             <option value="Vencido">Vencido</option>
+            <option value="Pendente Pagamento">Pendente Pagamento</option>
+            <option value="Ativo Parceiro">Ativo Parceiro</option>
             <option value="Bloqueado">Bloqueado</option>
             <option value="Inativo">Inativo</option>
             <option value="Em Teste">Em Teste</option>
@@ -961,6 +975,8 @@ export const ClientManagement: React.FC<ClientManagementProps> = ({
                             <option value="Hoje">🟡 Vence Hoje</option>
                             <option value="A Vencer">🔵 A Vencer</option>
                             <option value="Vencido">🔴 Vencido</option>
+                            <option value="Pendente Pagamento">🟠 Pendente Pagamento</option>
+                            <option value="Ativo Parceiro">🤝 Ativo Parceiro</option>
                             <option value="Bloqueado">⛔ Bloqueado</option>
                             <option value="Inativo">⚪ Inativo</option>
                             <option value="Em Teste">🧪 Em Teste</option>
@@ -1058,6 +1074,8 @@ export const ClientManagement: React.FC<ClientManagementProps> = ({
                     <option value="Hoje">🟡 Vence Hoje</option>
                     <option value="A Vencer">🔵 A Vencer</option>
                     <option value="Vencido">🔴 Vencido</option>
+                    <option value="Pendente Pagamento">🟠 Pendente Pagamento</option>
+                    <option value="Ativo Parceiro">🤝 Ativo Parceiro</option>
                     <option value="Bloqueado">🔒 Bloqueado</option>
                     <option value="Inativo">⚪ Inativo</option>
                     <option value="Em Teste">🧪 Em Teste</option>
