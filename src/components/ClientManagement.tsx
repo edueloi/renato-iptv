@@ -16,6 +16,7 @@ interface ClientManagementProps {
   onEditClient: (client: Client) => void;
   onDeleteClient: (id: string) => void;
   onRenewBatch: (ids: string[]) => void;
+  onDeleteBatch: (ids: string[]) => void;
   onRefresh: () => void;
 }
 
@@ -25,6 +26,7 @@ export const ClientManagement: React.FC<ClientManagementProps> = ({
   onEditClient,
   onDeleteClient,
   onRenewBatch,
+  onDeleteBatch,
   onRefresh,
 }) => {
   const [search, setSearch] = useState('');
@@ -33,6 +35,7 @@ export const ClientManagement: React.FC<ClientManagementProps> = ({
   const [appFilter, setAppFilter] = useState<string>('TODOS');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [clientToDelete, setClientToDelete] = useState<Client | null>(null);
+  const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
 
   // Date Filters & Growth Analytics States
   const currentYearStr = new Date().getFullYear().toString();
@@ -425,13 +428,22 @@ export const ClientManagement: React.FC<ClientManagementProps> = ({
 
         <div className="flex items-center gap-1.5 shrink-0">
           {selectedIds.length > 0 && (
-            <button
-              onClick={() => onRenewBatch(selectedIds)}
-              className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg text-xs border border-emerald-500 flex items-center gap-1 transition-colors shadow-2xs"
-            >
-              <RefreshCw className="w-3 h-3" />
-              <span className="hidden sm:inline">Renovar ({selectedIds.length})</span>
-            </button>
+            <>
+              <button
+                onClick={() => onRenewBatch(selectedIds)}
+                className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg text-xs border border-emerald-500 flex items-center gap-1 transition-colors shadow-2xs"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span className="hidden sm:inline">Renovar ({selectedIds.length})</span>
+              </button>
+              <button
+                onClick={() => setShowBatchDeleteConfirm(true)}
+                className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white font-medium rounded-lg text-xs border border-rose-500 flex items-center gap-1 transition-colors shadow-2xs"
+              >
+                <Trash2 className="w-3 h-3" />
+                <span className="hidden sm:inline">Excluir ({selectedIds.length})</span>
+              </button>
+            </>
           )}
 
           <button
@@ -1063,24 +1075,8 @@ export const ClientManagement: React.FC<ClientManagementProps> = ({
                   </p>
                 </div>
 
-                {/* Status Dropdown & Action Icons */}
+                {/* Action Icons */}
                 <div className="flex items-center gap-1 shrink-0">
-                  <select
-                    value={client.status}
-                    onChange={(e) => handleQuickStatusChange(client.id, e.target.value as ClientStatus)}
-                    className="text-[10px] font-semibold bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg px-1.5 py-1 focus:outline-none cursor-pointer max-w-[110px]"
-                  >
-                    <option value="Ativo">🟢 Ativo</option>
-                    <option value="Hoje">🟡 Vence Hoje</option>
-                    <option value="A Vencer">🔵 A Vencer</option>
-                    <option value="Vencido">🔴 Vencido</option>
-                    <option value="Pendente Pagamento">🟠 Pendente Pagamento</option>
-                    <option value="Ativo Parceiro">🤝 Ativo Parceiro</option>
-                    <option value="Bloqueado">🔒 Bloqueado</option>
-                    <option value="Inativo">⚪ Inativo</option>
-                    <option value="Em Teste">🧪 Em Teste</option>
-                  </select>
-
                   {/* Edit Button */}
                   <button
                     onClick={() => onEditClient(client)}
@@ -1100,6 +1096,23 @@ export const ClientManagement: React.FC<ClientManagementProps> = ({
                   </button>
                 </div>
               </div>
+
+              {/* Status Dropdown: full width row so long status labels never get clipped */}
+              <select
+                value={client.status}
+                onChange={(e) => handleQuickStatusChange(client.id, e.target.value as ClientStatus)}
+                className="w-full text-[11px] font-semibold bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none cursor-pointer"
+              >
+                <option value="Ativo">🟢 Ativo</option>
+                <option value="Hoje">🟡 Vence Hoje</option>
+                <option value="A Vencer">🔵 A Vencer</option>
+                <option value="Vencido">🔴 Vencido</option>
+                <option value="Pendente Pagamento">🟠 Pendente Pagamento</option>
+                <option value="Ativo Parceiro">🤝 Ativo Parceiro</option>
+                <option value="Bloqueado">🔒 Bloqueado</option>
+                <option value="Inativo">⚪ Inativo</option>
+                <option value="Em Teste">🧪 Em Teste</option>
+              </select>
 
               {/* Due Date & Value row */}
               <div className="grid grid-cols-2 gap-2 text-[11px] bg-slate-50/70 dark:bg-slate-800/40 p-2 rounded-lg border border-slate-100 dark:border-slate-800/60">
@@ -1158,6 +1171,22 @@ export const ClientManagement: React.FC<ClientManagementProps> = ({
           }
         }}
         onClose={() => setClientToDelete(null)}
+      />
+
+      {/* Batch Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showBatchDeleteConfirm}
+        title="Excluir Assinantes Selecionados"
+        message={`Tem certeza que deseja excluir ${selectedIds.length} cliente(s) selecionado(s)? Esta ação removerá os dados permanentemente.`}
+        confirmText="Sim, Excluir Todos"
+        cancelText="Cancelar"
+        variant="danger"
+        onConfirm={() => {
+          onDeleteBatch(selectedIds);
+          setSelectedIds([]);
+          setShowBatchDeleteConfirm(false);
+        }}
+        onClose={() => setShowBatchDeleteConfirm(false)}
       />
     </div>
   );

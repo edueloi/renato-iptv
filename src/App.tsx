@@ -165,6 +165,23 @@ export default function App() {
     }
   };
 
+  const handleDeleteBatch = async (clientIds: string[]) => {
+    try {
+      const res = await apiFetch('/api/clients/batch-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientIds })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        showToast(`${json.deletedCount} clientes excluídos.`);
+        fetchClients();
+      }
+    } catch (err) {
+      console.error('Error deleting clients in batch:', err);
+    }
+  };
+
   // Metrics summary for top bar
   const activeCount = clients.filter(c => c.status === 'Ativo' || c.status === 'Hoje' || c.status === 'A Vencer' || c.status === 'Pendente Pagamento' || c.status === 'Ativo Parceiro').length;
   const overdueCount = clients.filter(c => c.status === 'Vencido').length;
@@ -365,6 +382,7 @@ export default function App() {
             onEditClient={(client) => { setEditingClient(client); setIsClientModalOpen(true); }}
             onDeleteClient={handleDeleteClient}
             onRenewBatch={handleRenewBatch}
+            onDeleteBatch={handleDeleteBatch}
             onRefresh={fetchClients}
           />
         )}

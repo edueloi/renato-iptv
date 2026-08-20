@@ -43,6 +43,7 @@ export const SpreadsheetImporter: React.FC<SpreadsheetImporterProps> = ({
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [searchFilter, setSearchFilter] = useState('');
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [skippedRows, setSkippedRows] = useState<{ rowNumber: number; reason: string }[]>([]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -106,9 +107,13 @@ export const SpreadsheetImporter: React.FC<SpreadsheetImporterProps> = ({
 
       if (res.ok) {
         setParsedRows(json.allRows || []);
+        setSkippedRows(json.skippedRows || []);
+        const skippedText = json.skippedRows?.length
+          ? ` ${json.skippedRows.length} linha(s) foram ignoradas (veja abaixo).`
+          : '';
         setStatusMsg({
           type: 'success',
-          text: `Sucesso! ${json.totalParsed} clientes lidos e prontos para pré-visualização.`
+          text: `Sucesso! ${json.totalParsed} clientes lidos e prontos para pré-visualização.${skippedText}`
         });
       } else {
         setStatusMsg({ type: 'error', text: json.error || 'Falha ao processar dados.' });
@@ -408,6 +413,20 @@ export const SpreadsheetImporter: React.FC<SpreadsheetImporterProps> = ({
           }`}>
             {statusMsg.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
             <span className="font-medium">{statusMsg.text}</span>
+          </div>
+        )}
+
+        {skippedRows.length > 0 && (
+          <div className="p-3 rounded-xl text-xs bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800 space-y-1">
+            <div className="flex items-center gap-2 font-semibold">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{skippedRows.length} linha(s) da planilha foram ignoradas na leitura:</span>
+            </div>
+            <ul className="pl-6 list-disc space-y-0.5">
+              {skippedRows.map((r, idx) => (
+                <li key={idx}>Linha {r.rowNumber}: {r.reason}</li>
+              ))}
+            </ul>
           </div>
         )}
       </div>

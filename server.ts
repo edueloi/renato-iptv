@@ -739,6 +739,24 @@ app.post('/api/clients/batch-renew', ah(async (req, res) => {
   res.json({ success: true, renewedCount: count });
 }));
 
+// BATCH CLIENT DELETE
+app.post('/api/clients/batch-delete', ah(async (req, res) => {
+  const store = await readDb();
+  const { clientIds } = req.body;
+
+  if (!Array.isArray(clientIds)) {
+    return res.status(400).json({ error: 'Lista de IDs de clientes inválida' });
+  }
+
+  const idsToDelete = new Set(clientIds);
+  const beforeCount = store.clients.length;
+  store.clients = store.clients.filter(c => !idsToDelete.has(c.id));
+  const deletedCount = beforeCount - store.clients.length;
+
+  await writeDb(store);
+  res.json({ success: true, deletedCount });
+}));
+
 // SPREADSHEET IMPORT API (Columns A to H mapping + Direct Excel Text Paste)
 app.post('/api/import/parse', (req, res) => {
   const { fileBase64, pastedText, serviceType: forcedServiceType } = req.body;
@@ -774,6 +792,7 @@ app.post('/api/import/parse', (req, res) => {
     }
 
     const parsedData: any[] = [];
+    const skippedRows: { rowNumber: number; reason: string }[] = [];
 
     // Check if row 0 is header row
     const firstColStr = String(rows[0][0] || '').toLowerCase();
@@ -783,10 +802,16 @@ app.post('/api/import/parse', (req, res) => {
 
     for (let i = startRow; i < rows.length; i++) {
       const row = rows[i];
-      if (!row || row.length === 0) continue;
+      if (!row || row.length === 0) {
+        skippedRows.push({ rowNumber: i + 1, reason: 'Linha totalmente vazia' });
+        continue;
+      }
 
       const colB = String(row[1] || row[0] || '').trim();
-      if (!colB) continue; // Skip empty row
+      if (!colB) {
+        skippedRows.push({ rowNumber: i + 1, reason: 'Sem nome de usuário nas colunas A/B' });
+        continue; // Skip empty row
+      }
 
       // Coluna A é o indicador de ativo/inativo: só tem número (1) quando o cliente está ativo.
       // Linha em vermelho na planilha original = coluna A vazia = cliente inativo, mesmo que a
@@ -871,7 +896,8 @@ app.post('/api/import/parse', (req, res) => {
     res.json({
       totalParsed: parsedData.length,
       sample: parsedData.slice(0, 50),
-      allRows: parsedData
+      allRows: parsedData,
+      skippedRows
     });
   } catch (err: any) {
     console.error('Spreadsheet parse error:', err);
@@ -899,7 +925,9 @@ app.post('/api/import/confirm', ah(async (req, res) => {
       username: item.username || 'Cliente ' + (idx + 1),
       dueDate: item.dueDate || new Date().toISOString().split('T')[0],
       status: (item.status as ClientStatus) || 'Ativo',
-      value: Number(item.value) || 35.00,
+      // Não usar "||" aqui: valor 0 é um valor legítimo (célula vazia na planilha) e
+      // "0 || 35.00" resultaria em 35.00 por 0 ser falsy em JS.
+      value: Number.isFinite(Number(item.value)) ? Number(item.value) : 0,
       extraField: item.extraField || '',
       contact: cleanPhoneForImport(item.contact),
       appUsed: item.appUsed || 'XCIPTV',
