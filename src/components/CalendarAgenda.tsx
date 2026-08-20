@@ -83,7 +83,7 @@ export function CalendarAgenda({ clients, onRenewClient, onRefreshData }: Calend
   if (statusFilter !== 'TODOS') {
     selectedDayClients = selectedDayClients.filter(c => {
       if (statusFilter === 'HOJE') return c.status === 'Hoje';
-      if (statusFilter === 'VENCIDO') return c.status === 'Vencido';
+      if (statusFilter === 'VENCIDO') return c.status === 'Pendente Pagamento' || c.status === 'Vencido';
       if (statusFilter === 'A_VENCER') return c.status === 'A Vencer';
       return true;
     });
@@ -189,7 +189,7 @@ export function CalendarAgenda({ clients, onRenewClient, onRefreshData }: Calend
 
               // Status metrics for badges
               const todayCount = dayClients.filter(c => c.status === 'Hoje').length;
-              const overdueCount = dayClients.filter(c => c.status === 'Vencido').length;
+              const overdueCount = dayClients.filter(c => c.status === 'Pendente Pagamento' || c.status === 'Vencido').length;
               const activeCount = dayClients.filter(c => c.status === 'Ativo' || c.status === 'A Vencer' || c.status === 'Pendente Pagamento' || c.status === 'Ativo Parceiro').length;
 
               return (
@@ -318,7 +318,7 @@ export function CalendarAgenda({ clients, onRenewClient, onRefreshData }: Calend
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
               }`}
             >
-              Vencidos
+              Pend. Pagamento
             </button>
           </div>
 
@@ -336,7 +336,7 @@ export function CalendarAgenda({ clients, onRenewClient, onRefreshData }: Calend
               </div>
             ) : (
               selectedDayClients.map((client) => {
-                const isOverdue = client.status === 'Vencido';
+                const isOverdue = client.status === 'Pendente Pagamento' || client.status === 'Vencido';
                 const isTodayDue = client.status === 'Hoje';
 
                 return (

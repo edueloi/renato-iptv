@@ -488,14 +488,16 @@ function updateClientStatuses(clients: Client[]): Client[] {
     let newStatus: ClientStatus = client.status;
 
     // Preserve manual statuses if set explicitly
-    if (client.status === 'Bloqueado' || client.status === 'Inativo' || client.status === 'Em Teste' || client.status === 'Pendente Pagamento' || client.status === 'Ativo Parceiro') {
+    if (client.status === 'Bloqueado' || client.status === 'Inativo' || client.status === 'Em Teste' || client.status === 'Ativo Parceiro') {
       return client;
     }
 
     if (diffDays < -10 && client.status !== 'Ativo') {
       newStatus = 'Inativo';
     } else if (diffDays < 0) {
-      newStatus = 'Vencido';
+      // Cliente passou do vencimento: fica "Pendente Pagamento" (ainda ativo, aguardando o
+      // pagamento) em vez de "Vencido" - só vira Inativo se ficar muito tempo sem pagar.
+      newStatus = 'Pendente Pagamento';
     } else if (diffDays === 0) {
       newStatus = 'Hoje';
     } else if (diffDays > 0 && diffDays <= 3) {
@@ -529,7 +531,7 @@ async function processBotQueue() {
       shouldSend = true;
       type = 'INATIVO';
       template = store.botConfig.templateInactive;
-    } else if (client.status === 'Vencido' && store.botConfig.targetOverdue && client.botStatus !== 'ENVIADO') {
+    } else if ((client.status === 'Pendente Pagamento' || client.status === 'Vencido') && store.botConfig.targetOverdue && client.botStatus !== 'ENVIADO') {
       shouldSend = true;
       type = 'VENCIDO';
       template = store.botConfig.templateOverdue;
@@ -1549,7 +1551,7 @@ async function executeBackupRoutine(options?: { targetEmail?: string; isAutoTrig
   }
 
   const activeCount = db.clients.filter(c => c.status === 'Ativo' || c.status === 'Pendente Pagamento' || c.status === 'Ativo Parceiro').length;
-  const overdueCount = db.clients.filter(c => c.status === 'Vencido' || c.status === 'Hoje').length;
+  const overdueCount = db.clients.filter(c => c.status === 'Vencido' || c.status === 'Pendente Pagamento' || c.status === 'Hoje').length;
   const totalClients = db.clients.length;
   const totalRevenue = db.clients.filter(c => c.status !== 'Inativo').reduce((a, b) => a + (b.value || 0), 0);
 
@@ -1681,7 +1683,7 @@ app.post('/api/email/send-marketing', ah(async (req, res) => {
 
     let targetClients: Client[] = [];
     if (targetFilter === 'VENCIDO') {
-      targetClients = db.clients.filter(c => c.status === 'Vencido' || c.status === 'Hoje');
+      targetClients = db.clients.filter(c => c.status === 'Vencido' || c.status === 'Pendente Pagamento' || c.status === 'Hoje');
     } else if (targetFilter === 'ATIVO') {
       targetClients = db.clients.filter(c => c.status === 'Ativo' || c.status === 'Pendente Pagamento' || c.status === 'Ativo Parceiro');
     } else if (targetFilter === 'INATIVO') {

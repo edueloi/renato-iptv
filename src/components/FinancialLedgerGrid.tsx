@@ -308,7 +308,7 @@ export function FinancialLedgerGrid() {
                           </span>
                           <span
                             className={`px-2 py-0.5 rounded text-[9px] font-bold ${
-                              item.status === 'Vencido'
+                              item.status === 'Vencido' || item.status === 'Pendente Pagamento'
                                 ? 'bg-rose-500 text-white'
                                 : item.status === 'Hoje'
                                 ? 'bg-amber-500 text-white'

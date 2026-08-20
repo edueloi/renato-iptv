@@ -17,8 +17,36 @@ import { LoginScreen, UserAuth } from './components/LoginScreen';
 import { MobileNavigation, TabType } from './components/MobileNavigation';
 import { ToastContainer, ToastMessage } from './components/Toast';
 
+// Keeps the active tab in the URL so a page reload (or a shared link) lands back on the same
+// screen instead of always resetting to the clients tab.
+const TAB_PATHS: Record<TabType, string> = {
+  clients: '/clientes',
+  financials: '/faturamento',
+  expenses: '/despesas',
+  import: '/importar',
+  bot: '/bot',
+  templates: '/mensagens',
+  email: '/email',
+};
+const PATH_TABS: Record<string, TabType> = Object.fromEntries(
+  Object.entries(TAB_PATHS).map(([tab, path]) => [path, tab as TabType])
+);
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState<TabType>('clients');
+  const [activeTab, setActiveTab] = useState<TabType>(() => PATH_TABS[window.location.pathname] || 'clients');
+
+  useEffect(() => {
+    const path = TAB_PATHS[activeTab];
+    if (window.location.pathname !== path) {
+      window.history.pushState({}, '', path);
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    const onPopState = () => setActiveTab(PATH_TABS[window.location.pathname] || 'clients');
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem('iptv_pro_theme');
@@ -97,9 +125,12 @@ export default function App() {
       if (res.ok) {
         const json = await res.json();
         setClients(json);
+      } else {
+        showToast('Não foi possível carregar a lista de clientes. Tente atualizar a página.', 'error');
       }
     } catch (err) {
       console.error('Error fetching clients:', err);
+      showToast('Erro de conexão ao carregar clientes. Verifique sua internet e tente novamente.', 'error');
     } finally {
       setLoading(false);
     }
@@ -184,7 +215,7 @@ export default function App() {
 
   // Metrics summary for top bar
   const activeCount = clients.filter(c => c.status === 'Ativo' || c.status === 'Hoje' || c.status === 'A Vencer' || c.status === 'Pendente Pagamento' || c.status === 'Ativo Parceiro').length;
-  const overdueCount = clients.filter(c => c.status === 'Vencido').length;
+  const overdueCount = clients.filter(c => c.status === 'Pendente Pagamento' || c.status === 'Vencido').length;
   const inactiveCount = clients.filter(c => c.status === 'Inativo').length;
   const totalRevenue = clients
     .filter(c => c.status === 'Ativo' || c.status === 'Hoje' || c.status === 'A Vencer' || c.status === 'Pendente Pagamento' || c.status === 'Ativo Parceiro')
@@ -228,7 +259,7 @@ export default function App() {
             <div className="w-px h-3 bg-slate-300 dark:bg-slate-700"></div>
             <div className="flex items-center gap-1 text-rose-600 dark:text-rose-400">
               <span className="w-2 h-2 rounded-full bg-rose-500"></span>
-              Vencidos: <strong>{overdueCount}</strong>
+              Pend. Pagamento: <strong>{overdueCount}</strong>
             </div>
             <div className="w-px h-3 bg-slate-300 dark:bg-slate-700"></div>
             <div className="flex items-center gap-1 text-indigo-600 dark:text-indigo-400">
