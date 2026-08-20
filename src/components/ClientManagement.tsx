@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Search, Plus, Filter, RefreshCw, MessageCircle, Edit2, Trash2, 
   CheckCircle2, AlertTriangle, Clock, XCircle, ChevronDown, Download, CheckSquare, UserCheck,
@@ -36,6 +36,48 @@ export const ClientManagement: React.FC<ClientManagementProps> = ({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [clientToDelete, setClientToDelete] = useState<Client | null>(null);
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
+
+  // Sorting & Pagination
+  const [sortBy, setSortBy] = useState<'NAME' | 'STATUS' | 'DUE_DATE'>('NAME');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number | 'ALL'>(50);
+  const preferencesLoaded = useRef(false);
+
+  // Load the reseller's saved "clients per page" preference from the backend once, on mount
+  useEffect(() => {
+    apiFetch('/api/user/preferences')
+      .then(res => (res.ok ? res.json() : null))
+      .then(prefs => {
+        if (prefs?.clientsPageSize) setPageSize(prefs.clientsPageSize);
+      })
+      .catch(() => {})
+      .finally(() => { preferencesLoaded.current = true; });
+  }, []);
+
+  const handlePageSizeChange = (value: number | 'ALL') => {
+    setPageSize(value);
+    setPage(1);
+    // Skip persisting the very first (default) value before the saved preference has loaded,
+    // so we don't overwrite it with the default right after fetching it.
+    if (!preferencesLoaded.current) return;
+    apiFetch('/api/user/preferences', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientsPageSize: value })
+    }).catch(() => {});
+  };
+
+  const STATUS_ORDER: Record<string, number> = {
+    'Hoje': 0,
+    'Pendente Pagamento': 1,
+    'A Vencer': 2,
+    'Vencido': 3,
+    'Ativo': 4,
+    'Ativo Parceiro': 5,
+    'Em Teste': 6,
+    'Bloqueado': 7,
+    'Inativo': 8,
+  };
 
   // Date Filters & Growth Analytics States
   const currentYearStr = new Date().getFullYear().toString();
@@ -110,6 +152,25 @@ export const ClientManagement: React.FC<ClientManagementProps> = ({
 
     return matchSearch && matchStatus && matchService && matchApp && matchDate;
   });
+
+  const sortedClients = [...filteredClients].sort((a, b) => {
+    if (sortBy === 'NAME') return a.username.localeCompare(b.username, 'pt-BR');
+    if (sortBy === 'STATUS') return (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99);
+    // DUE_DATE: YYYY-MM-DD sorts correctly as plain strings
+    return (a.dueDate || '').localeCompare(b.dueDate || '');
+  });
+
+  const totalPages = pageSize === 'ALL' ? 1 : Math.max(1, Math.ceil(sortedClients.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const paginatedClients = pageSize === 'ALL'
+    ? sortedClients
+    : sortedClients.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  // Whenever filters/search/sort narrow the result set, go back to page 1 instead of landing
+  // on a now out-of-range empty page.
+  useEffect(() => {
+    setPage(1);
+  }, [search, statusFilter, serviceFilter, appFilter, dateFilterField, filterYear, filterMonth, filterDay, sortBy]);
 
   // MoM Growth Analysis Computation (Mês a Mês e Porcentagens)
   const getMoMGrowthData = () => {
@@ -217,7 +278,7 @@ export const ClientManagement: React.FC<ClientManagementProps> = ({
   // Select all handler
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.checked) {
-      setSelectedIds(filteredClients.map(c => c.id));
+      setSelectedIds(paginatedClients.map(c => c.id));
     } else {
       setSelectedIds([]);
     }
@@ -913,6 +974,37 @@ export const ClientManagement: React.FC<ClientManagementProps> = ({
         </div>
       )}
 
+      {/* Sort & Page Size Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-white dark:bg-slate-900 p-2 sm:p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-[11px]">
+        <div className="flex items-center gap-1.5">
+          <span className="text-slate-500 dark:text-slate-400 font-medium">Ordenar por:</span>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as 'NAME' | 'STATUS' | 'DUE_DATE')}
+            className="py-1 px-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer font-medium"
+          >
+            <option value="NAME">Nome (A-Z)</option>
+            <option value="STATUS">Status</option>
+            <option value="DUE_DATE">Vencimento</option>
+          </select>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <span className="text-slate-500 dark:text-slate-400 font-medium">Por página:</span>
+          <select
+            value={String(pageSize)}
+            onChange={(e) => handlePageSizeChange(e.target.value === 'ALL' ? 'ALL' : Number(e.target.value))}
+            className="py-1 px-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer font-medium"
+          >
+            <option value="25">25</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+            <option value="250">250</option>
+            <option value="ALL">Todos</option>
+          </select>
+        </div>
+      </div>
+
       {/* Desktop & Tablet Table View */}
       <div className="hidden md:block bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs">
         <div className="overflow-x-auto">
@@ -922,7 +1014,7 @@ export const ClientManagement: React.FC<ClientManagementProps> = ({
                 <th className="p-2.5 text-center w-8">
                   <input
                     type="checkbox"
-                    checked={selectedIds.length === filteredClients.length && filteredClients.length > 0}
+                    checked={selectedIds.length === paginatedClients.length && paginatedClients.length > 0}
                     onChange={handleSelectAll}
                     className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                   />
@@ -938,14 +1030,14 @@ export const ClientManagement: React.FC<ClientManagementProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-slate-700 dark:text-slate-200">
-              {filteredClients.length === 0 ? (
+              {paginatedClients.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="p-6 text-center text-slate-400">
                     Nenhum cliente encontrado com os filtros selecionados.
                   </td>
                 </tr>
               ) : (
-                filteredClients.map((client) => {
+                paginatedClients.map((client) => {
                   const isSelected = selectedIds.includes(client.id);
                   return (
                     <tr 
@@ -1051,12 +1143,12 @@ export const ClientManagement: React.FC<ClientManagementProps> = ({
 
       {/* Mobile Responsive Cards List */}
       <div className="block md:hidden space-y-2">
-        {filteredClients.length === 0 ? (
+        {paginatedClients.length === 0 ? (
           <div className="p-5 text-center text-slate-400 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">
             Nenhum cliente encontrado.
           </div>
         ) : (
-          filteredClients.map((client, index) => (
+          paginatedClients.map((client, index) => (
             <div 
               key={client.id}
               className="p-2.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2 shadow-2xs"
@@ -1065,7 +1157,7 @@ export const ClientManagement: React.FC<ClientManagementProps> = ({
               <div className="flex items-start justify-between gap-2 border-b border-slate-100 dark:border-slate-800/80 pb-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] font-mono font-semibold text-slate-400">#{client.generalQty || (index + 1)}</span>
+                    <span className="text-[10px] font-mono font-semibold text-slate-400">#{client.generalQty || (index + 1 + (pageSize === 'ALL' ? 0 : (currentPage - 1) * pageSize))}</span>
                     <h4 className="font-bold text-slate-900 dark:text-slate-100 text-xs truncate">
                       {client.username}
                     </h4>
@@ -1155,6 +1247,34 @@ export const ClientManagement: React.FC<ClientManagementProps> = ({
           ))
         )}
       </div>
+
+      {/* Pagination Controls */}
+      {pageSize !== 'ALL' && sortedClients.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">
+          <span className="text-slate-500 dark:text-slate-400">
+            Mostrando {(currentPage - 1) * pageSize + 1}-{Math.min(currentPage * pageSize, sortedClients.length)} de {sortedClients.length}
+          </span>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            >
+              Anterior
+            </button>
+            <span className="px-2 text-slate-500 dark:text-slate-400 font-medium">
+              Página {currentPage} de {totalPages}
+            </span>
+            <button
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            >
+              Próxima
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       <ConfirmModal

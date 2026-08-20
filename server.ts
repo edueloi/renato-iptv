@@ -616,6 +616,19 @@ app.post('/api/auth/login', ah(async (req, res) => {
 // Everything below requires a valid session token
 app.use('/api', authMiddleware);
 
+// USER PREFERENCES (e.g. clients-per-page) - stored per logged-in user, not just in the browser
+app.get('/api/user/preferences', ah(async (req: express.Request & { user?: AuthUser }, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+  res.json(user?.preferences || {});
+}));
+
+app.put('/api/user/preferences', ah(async (req: express.Request & { user?: AuthUser }, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+  const merged = { ...(user?.preferences as object || {}), ...req.body };
+  await prisma.user.update({ where: { id: req.user!.id }, data: { preferences: merged } });
+  res.json(merged);
+}));
+
 // GET Clients
 app.get('/api/clients', ah(async (req, res) => {
   const store = await readDb();
